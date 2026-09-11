@@ -45,6 +45,16 @@ async function api(method, p, body) {
 // --- live event stream -------------------------------------------------
 const frames = [];
 const out = new Map();          // agentId -> terminal text
+// Same reason as check-agents: a refused socket rejects with an
+// AggregateError carrying an empty message, so without this the run ends
+// with a blank error rather than "start the server".
+const health = await fetch(BASE + '/api/health').then((r) => r.json()).catch(() => null);
+if (!health?.ok) {
+  console.error(`
+Conduit is not running on ${BASE} — start it with \`npm run start:all\`.`);
+  process.exit(2);
+}
+
 const ws = new WebSocket(BASE.replace(/^http/, 'ws') + '/ws', AUTH ? { headers } : undefined);
 ws.on('message', (raw) => {
   let m; try { m = JSON.parse(raw.toString()); } catch { return; }

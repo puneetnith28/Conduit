@@ -22,6 +22,25 @@ if (AUTH) headers.Authorization = 'Basic ' + Buffer.from(AUTH).toString('base64'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Describe an error that may not have anything useful in `.message`.
+ *
+ * AggregateError — which is what a refused socket produces — carries an empty
+ * message and puts the real reason in `.errors`. Printing `err.message` alone
+ * is how a total failure comes out as a blank line.
+ */
+function describeError(err) {
+  if (!err) return 'unknown error';
+  const parts = [];
+  if (err.message) parts.push(err.message);
+  if (err.code) parts.push(`(${err.code})`);
+  if (Array.isArray(err.errors) && err.errors.length) {
+    parts.push(err.errors.map((e) => e?.message || String(e)).join('; '));
+  }
+  if (!parts.length) parts.push(err.constructor?.name || String(err));
+  return parts.join(' ');
+}
+
 async function api(method, p, body) {
   const res = await fetch(BASE + '/api' + p, {
     method, headers, body: body ? JSON.stringify(body) : undefined,
@@ -37,6 +56,31 @@ fs.mkdirSync(projCwd, { recursive: true });
 
 let projectId = null;
 let pass = 0, fail = 0;
+
+/**
+ * Say plainly when there is nothing to check against.
+ *
+ * Without this the first failure was the WebSocket, and `ws` rejects a refused
+ * connection with an AggregateError whose `.message` is the empty string — it
+ * aggregates the IPv6 and IPv4 attempts and keeps the detail in `.errors`. So
+ * running this without `npm run start:all` printed
+ *
+ *     ✗ aborted:
+ *     0 ok, 1 problems
+ *
+ * which names neither the problem nor the fix, and reads like the script
+ * itself is broken.
+ */
+const health = await fetch(BASE + '/api/health').then((r) => r.json()).catch(() => null);
+if (!health?.ok) {
+  console.error(`\nConduit is not running on ${BASE} — start it with \`npm run start:all\`.`);
+  process.exit(2);
+}
+if (!health.daemon) {
+  console.error(`\nThe web server on ${BASE} is up but the daemon is not connected.`);
+  console.error('Agents live in the daemon, so nothing can start. Check the `npm run start:all` output.');
+  process.exit(2);
+}
 
 const ws = new WebSocket(BASE.replace(/^http/, 'ws') + '/ws', AUTH ? { headers } : undefined);
 const output = new Map();   // agentId -> accumulated terminal text
@@ -114,7 +158,7 @@ try {
   }
 } catch (err) {
   fail++;
-  console.error('\n  ✗ aborted:', err.message);
+  console.error('\n  ✗ aborted:', describeError(err));
 } finally {
   try { ws.close(); } catch { /* ignore */ }
   if (projectId) await api('DELETE', `/projects/${projectId}?removeData=true`).catch(() => {});

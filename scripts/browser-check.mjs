@@ -36,6 +36,15 @@ const child = spawn(bin, [
 ], { stdio: 'ignore' });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Nothing below can mean anything without a running instance, and failing at
+// the browser stage blames the browser for a server that was never up.
+const health = await fetch(URL_.replace(/\/$/, '') + '/api/health')
+  .then((r) => r.json()).catch(() => null);
+if (!health?.ok) {
+  console.error(`\nConduit is not running on ${URL_} — start it with \`npm run start:all\`.`);
+  process.exit(2);
+}
 async function browserWs() {
   for (let i = 0; i < 50; i++) {
     try {
