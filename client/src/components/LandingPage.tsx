@@ -6,6 +6,7 @@ import WorkflowShowcaseSection from './WorkflowShowcaseSection';
 import { BrandIcons } from './ecosystem/BrandIcons';
 import DownloadModal from './DownloadModal';
 import { WatchClassifyDemo, GateApprovalDemo } from './safety/SafetyLoopShowcase';
+import InteractiveCanvas from './InteractiveCanvas';
 
 interface LandingPageProps {
   onOpenConsole: () => void;
@@ -211,7 +212,7 @@ export default function LandingPage({ onOpenConsole, onStartTour }: LandingPageP
       <section className="landing-hero">
         {/* Hero Background Illustration */}
         <div className="landing-hero-bg-container" aria-hidden="true">
-          <div className="landing-hero-bg-art" />
+          <InteractiveCanvas />
           <div className="landing-hero-bg-glow" />
         </div>
 

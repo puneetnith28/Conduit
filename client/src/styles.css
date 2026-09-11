@@ -7706,24 +7706,16 @@ body.is-resizing .pane-resizer {
   pointer-events: none;
   z-index: 1;
   overflow: hidden;
+  mask-image: linear-gradient(to bottom, black 0%, black 50%, transparent 92%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 50%, transparent 92%);
 }
 
-.landing-hero-bg-art {
+.landing-hero-bg-container canvas {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  background-image: url('/bg.jpg');
-  background-position: center 66%;
-  background-size: cover;
-  background-repeat: no-repeat;
-  opacity: 0.38;
-  mix-blend-mode: multiply;
-  mask-image: linear-gradient(to bottom, black 0%, black 82%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 82%, transparent 100%);
-  filter: saturate(1.1) hue-rotate(-8deg) contrast(1.02);
   pointer-events: none;
-  transition: opacity 0.3s ease;
 }
 
 .landing-hero-bg-glow {
@@ -7734,9 +7726,9 @@ body.is-resizing .pane-resizer {
   background:
     radial-gradient(circle 700px at 0% 15%, rgba(220, 208, 255, 0.85) 0%, transparent 70%),
     radial-gradient(circle 750px at 100% 15%, rgba(213, 197, 255, 0.9) 0%, transparent 70%),
-    radial-gradient(circle 600px at 0% 90%, rgba(220, 208, 255, 0.55) 0%, transparent 70%),
-    radial-gradient(circle 650px at 100% 90%, rgba(213, 197, 255, 0.6) 0%, transparent 70%),
-    radial-gradient(ellipse 80% 65% at 50% 64%, rgba(213, 197, 255, 0.45) 0%, rgba(225, 215, 255, 0.18) 50%, transparent 80%);
+    radial-gradient(circle 550px at 0% 60%, rgba(220, 208, 255, 0.35) 0%, transparent 70%),
+    radial-gradient(circle 600px at 100% 60%, rgba(213, 197, 255, 0.4) 0%, transparent 70%),
+    radial-gradient(ellipse 80% 55% at 50% 48%, rgba(213, 197, 255, 0.3) 0%, rgba(225, 215, 255, 0.08) 50%, transparent 80%);
   pointer-events: none;
   z-index: 0;
 }
