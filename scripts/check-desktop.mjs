@@ -265,7 +265,13 @@ try {
     // success, so count real bytes off the stream the browser uses.
     for (let i = 0; i < 40 && (output.get(agentId) || '').trim().length < 40; i++) await sleep(500);
     const bytes = (output.get(agentId) || '').trim().length;
-    t(bytes >= 40, `${cli.padEnd(9)} running — ${bytes} bytes of terminal output`,
+    // Same trap as check-agents: the trust prompt is output, so a byte
+    // count alone reports a blocked agent as a working one.
+    const text = output.get(id) || '';
+    const blocked = /trust\s*this\s*folder/i.test(text)
+      || /Is\s*this\s*a\s*project\s*you\s*created/i.test(text);
+    if (blocked) t(false, `${cli.padEnd(9)} is blocked on the workspace trust prompt`);
+    t(bytes >= 40 && !blocked, `${cli.padEnd(9)} running — ${bytes} bytes of terminal output`,
       'started but printed nothing');
   }
   try { stream.close(); } catch { /* ignore */ }

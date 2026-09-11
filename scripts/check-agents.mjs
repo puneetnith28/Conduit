@@ -123,7 +123,20 @@ try {
       const bytes = (output.get(id) || '').length;
       const live = (await api('GET', `/projects/${projectId}/agents`)).json
         .find((x) => x.id === id)?.status !== 'stopped';
-      if (bytes > 0 && live) {
+      // "It printed something" is not "it is working".
+      //
+      // Claude Code's first-run trust prompt is itself terminal output, so an
+      // agent blocked on it satisfied a byte count and was reported as
+      // running while it was waiting for a keypress and would wait forever.
+      // Conduit raises a gate for this now; the point here is that a blocked
+      // agent must never again be counted as a working one.
+      const text = output.get(id) || '';
+      const blocked = /trust\s*this\s*folder/i.test(text)
+        || /Is\s*this\s*a\s*project\s*you\s*created/i.test(text);
+      if (blocked) {
+        console.log(`  ✗ ${cli.padEnd(9)} is blocked on the workspace trust prompt, not running`);
+        fail++;
+      } else if (bytes > 0 && live) {
         console.log(`  ✓ ${cli.padEnd(9)} running — ${bytes} bytes of terminal output`);
         pass++;
       } else {
