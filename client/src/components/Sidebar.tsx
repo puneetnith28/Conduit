@@ -190,7 +190,15 @@ export default function Sidebar({
                     <span className="nm">{a.name}</span>
                   </div>
                   <div className="sb-agent-sub-row">
-                    <span className="cli-tag" style={{ color: hue, background: `color-mix(in oklab, ${hue} 14%, transparent)` }}>
+                    <span
+                      className="cli-tag"
+                      style={{
+                        // Darkened for the same reason as the pane header's
+                        // tag — see AgentGrid. 9px of the raw hue is 3.05:1.
+                        color: `color-mix(in oklab, ${hue} 62%, #000)`,
+                        background: `color-mix(in oklab, ${hue} 14%, transparent)`,
+                      }}
+                    >
                       {a.cli}
                     </span>
                     {(a.role || a.cwd) && (

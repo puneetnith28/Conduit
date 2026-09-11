@@ -178,7 +178,16 @@ function AgentPane({
           <div className="pane-agent">
             <div className="pane-agent-avatar" style={{ background: hue }}>{initials}</div>
             <span className="pane-agent-name">{agent.name}</span>
-            <span className="cli-tag" style={{ color: hue, background: `color-mix(in oklab, ${hue} 12%, transparent)` }}>
+            <span
+              className="cli-tag"
+              style={{
+                // The hue is chosen to sit behind dark text on the avatar. As
+                // 9px text on a 12% wash of itself it measured 3.05:1, so it
+                // is darkened here — same identity, readable label.
+                color: `color-mix(in oklab, ${hue} 62%, #000)`,
+                background: `color-mix(in oklab, ${hue} 12%, transparent)`,
+              }}
+            >
               {agent.cli}
             </span>
             {agent.role && (

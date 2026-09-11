@@ -99,14 +99,22 @@ function timeAgo(ts: string | undefined): string {
   return days + 'd';
 }
 
+/**
+ * One colour per file type, for the 9.5px extension label in the tree.
+ *
+ * These were 62-72% lightness, which is right for a fill and much too light
+ * for text: `md` measured 2.42:1 against the panel behind it, the worst
+ * contrast left in the app. Dropped to 45% — same hues, same at-a-glance
+ * distinction between file types, now actually readable at 9.5px.
+ */
 const EXT_COLOR: Record<string, string> = {
-  md: 'oklch(70% 0.08 190)',
-  json: 'oklch(72% 0.11 80)',
-  fig: 'oklch(68% 0.12 310)',
-  png: 'oklch(66% 0.10 145)',
-  jpg: 'oklch(66% 0.10 145)',
-  log: 'oklch(62% 0.08 25)',
-  txt: 'oklch(62% 0 0)',
+  md: 'oklch(45% 0.08 190)',
+  json: 'oklch(45% 0.11 80)',
+  fig: 'oklch(45% 0.12 310)',
+  png: 'oklch(45% 0.10 145)',
+  jpg: 'oklch(45% 0.10 145)',
+  log: 'oklch(45% 0.08 25)',
+  txt: 'oklch(45% 0 0)',
 };
 
 function TreeNodeView({

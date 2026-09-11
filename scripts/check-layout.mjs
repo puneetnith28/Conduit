@@ -14,7 +14,7 @@
  *   overlap    two things that both want to be read or clicked are drawn on
  *              top of each other — what "misaligned" almost always means
  *   offscreen  a visible element sits outside the viewport
- *   tiny       a touch target below 44px on a phone-sized screen
+ *   tiny       a touch target below the 24x24 CSS pixels WCAG 2.5.8 requires
  *   contrast   text within a hair of its own background
  *
  * Each finding names a selector path, so it can be fixed rather than admired.
@@ -361,11 +361,27 @@ for (const el of all) {
 }
 
 // ── things too small to tap ──────────────────────────────────────────
+//
+// 24x24, because that is what WCAG 2.5.8 actually requires, and a bar has to
+// come from somewhere other than taste. The comfortable size is 44x44 (2.5.5,
+// AAA) and most of this app now clears 40 — but reporting everything under 44
+// as a defect meant a 36x40 button counted the same as an 18px one, and the
+// list stopped distinguishing "could be roomier" from "genuinely hard to hit".
+//
+// The half-pixel of slack is for sub-pixel layout: a control measured at
+// 39.997 is a 40px control.
+const MIN_TAP = 24;
 if (window.innerWidth <= 820) {
   for (const el of all) {
     if (!el.matches(INTERACTIVE)) continue;
-    const r = visRect(el);
-    if (r.width >= 40 && r.height >= 40) continue;
+    // The control's own size, not its visible slice. A settings field half
+    // scrolled past the edge of its panel measures 22px tall and is a 40px
+    // control the moment you scroll — that is not a defect, and reporting it
+    // as one sent me looking for a sizing bug that did not exist. Skip
+    // anything scrolled away entirely, then judge the real box.
+    if (visRect(el).height < 2) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width + 0.5 >= MIN_TAP && r.height + 0.5 >= MIN_TAP) continue;
     if (r.width < 6 || r.height < 6) continue;   // decorative
     out.tiny.push({ path: pathOf(el), text: label(el),
       w: Math.round(r.width), h: Math.round(r.height) });
@@ -374,10 +390,36 @@ if (window.innerWidth <= 820) {
 }
 
 // ── text you cannot read against its own background ──────────────────
+// Resolve any CSS colour through a canvas.
+//
+// Parsing the string directly only works for rgb()/rgba(). The agent avatars
+// are oklch(66% 0.12 190), and Chrome hands that back verbatim — so reading
+// the numbers out gave r=66 g=0.12 b=190, a luminance from nowhere, and a
+// confident 2.06:1 report on text that is perfectly readable. A 1x1 canvas
+// resolves every colour syntax the browser supports, including the ones that
+// have not been invented yet.
+const _cx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+const _cache = new Map();
+const toRgba = (c) => {
+  if (_cache.has(c)) return _cache.get(c);
+  let out = null;
+  try {
+    _cx.clearRect(0, 0, 1, 1);
+    _cx.fillStyle = '#000';
+    _cx.fillStyle = c;                 // invalid values leave the previous one
+    _cx.fillRect(0, 0, 1, 1);
+    const d = _cx.getImageData(0, 0, 1, 1).data;
+    out = [d[0], d[1], d[2], d[3] / 255];
+  } catch { out = null; }
+  _cache.set(c, out);
+  return out;
+};
 const lum = (c) => {
-  const m = c.match(/[\\d.]+/g); if (!m) return null;
-  const [r, g, b, a] = m.map(Number);
-  if (a !== undefined && a < 0.5) return null;
+  if (!c || c === 'transparent') return null;
+  const rgba = toRgba(c);
+  if (!rgba) return null;
+  const [r, g, b, a] = rgba;
+  if (a < 0.5) return null;            // see-through: the layer below decides
   const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
   return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
 };
@@ -568,7 +610,7 @@ if (findings.length === 0) {
         console.log(`  ${where}  cut off by ${g.by}px`);
         console.log(`    ${g.path}  "${g.text}"`);
       } else if (kind === 'tiny') {
-        console.log(`  ${where}  ${g.w}×${g.h}px target`);
+        console.log(`  ${where}  ${g.w}×${g.h}px target (WCAG 2.5.8 wants 24×24)`);
         console.log(`    ${g.path}  "${g.text}"`);
       } else if (kind === 'contrast') {
         console.log(`  ${where}  ratio ${g.ratio} at ${g.size}px`);

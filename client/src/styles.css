@@ -32,9 +32,20 @@
   /* High-contrast deep charcoal */
   --text-1: #3f3f46;
   /* Secondary dark text */
-  --text-2: #71717a;
+  /* 6.2:1 on --bg-0. Was #71717a at 4.6:1 — which passes, but only just, and
+     it had to move when --text-3 was fixed below or the two steps would have
+     been within 0.15 of each other and stopped reading as a hierarchy. */
+  --text-2: #5c5c66;
   /* Muted supporting text */
-  --text-3: #a1a1aa;
+  /* 5.4:1 on --bg-0, 4.8:1 on the darkest surface it lands on (--bg-3).
+     Was #a1a1aa, which is 2.42:1 on --bg-0 and 2.56:1 on white — a long way
+     under the 4.5:1 that small text needs, and measurably the single largest
+     readability problem in the app: it is the colour of `hero-cta-subtext`,
+     `feature-tools-badge`, `stepper-crumb-label`, `gc-time`, `settings-card-desc`
+     and 79 other rules, so one wrong value made ~30 distinct pieces of text
+     across both the landing page and the console hard to read.
+     The intent — muted, secondary — is unchanged; it is just legible now. */
+  --text-3: #656570;
   /* Subtle metadata / placeholder */
 
   /* Signal & highlight tokens */
@@ -83,10 +94,17 @@
   --attn: #d97706;
   --attn-soft: #fffbeb;
   --attn-border: #fde68a;
-  --ok: #16a34a;
+  /* 5.0:1 on white as text. Was #16a34a — 3.3:1, which is fine for a status
+     dot and not fine for the words beside it, and this token is both. It is
+     the colour of "2 running", "connected", "Running", "Saved" and the 2/2
+     chip in the sidebar: five different places where the one piece of text
+     telling you the system is healthy was the hardest text to read. */
+  --ok: #15803d;
   --ok-soft: #f0fdf4;
   --ok-border: #bbf7d0;
-  --err: #dc2626;
+  /* 5.7:1 on white. Used for both text ("Clear", error messages) and as a
+     background behind white text, and it has to work for both. */
+  --err: #c81e1e;
   --err-soft: #fef2f2;
   --err-border: #fecaca;
   --idle: #71717a;
@@ -3089,6 +3107,10 @@ body.is-resizing .pane-resizer {
 }
 
 .tr-ext {
+  /* Explicit rather than inherited: at 9.5px this is the smallest text in the
+     file tree, and it was picking up a lighter colour from an ancestor that
+     suited 12px body text and not this. */
+  color: var(--text-2);
   font-family: var(--ff-mono);
   font-size: 9.5px;
   text-transform: uppercase;
@@ -3798,11 +3820,16 @@ body.is-resizing .pane-resizer {
     justify-content: flex-end !important;
   }
 
+  /* 40, not 32. This rule is inside a 640px breakpoint and carries
+     !important on every line, so it was quietly winning against the touch
+     target sizing further down the file — on a phone the header icons stayed
+     32×32 while the same buttons on a tablet grew. Raising it here rather than
+     out-specifying it there keeps one rule in charge of this. */
   .header .hbtn:not(.desktop-only) {
-    width: 32px !important;
-    height: 32px !important;
-    min-width: 32px !important;
-    min-height: 32px !important;
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
     display: grid !important;
     place-items: center !important;
     padding: 0 !important;
@@ -4037,11 +4064,14 @@ body.is-resizing .pane-resizer {
     flex-shrink: 0 !important;
   }
 
+  /* 40, for the same reason as .header .hbtn above: this block carries
+     !important on every line and was quietly winning against the touch target
+     sizing further down the file. */
   .pane-btn {
-    width: 32px !important;
-    height: 32px !important;
-    min-width: 32px !important;
-    min-height: 32px !important;
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
     border-radius: var(--radius-xs) !important;
     display: grid !important;
     place-items: center !important;
@@ -7239,6 +7269,10 @@ body.is-resizing .pane-resizer {
   align-items: center;
   gap: 7px;
   padding-right: 8px;
+  /* 24px is the floor WCAG 2.5.8 sets for anything you tap; this was 20. The
+     brand is a link home on a phone, and nothing here moves — the text keeps
+     its position, the reachable area just reaches the minimum. */
+  min-height: 24px;
   cursor: pointer;
   user-select: none;
 }
@@ -8403,7 +8437,7 @@ body.is-resizing .pane-resizer {
   gap: 3px;
 }
 .mini-line.cmd { color: #f4f4f5; font-weight: 600; }
-.mini-line.dim { color: #71717a; }
+.mini-line.dim { color: #7e7e88; }   /* 4.6:1 on the mock terminal; was 3.81 */
 .mini-line.pass { color: #4ade80; }
 .mini-term-caret { color: #fbbf24; animation: blink 0.8s infinite; }
 
@@ -10288,6 +10322,8 @@ body.is-resizing .pane-resizer {
   border: 1px solid rgba(15, 15, 17, 0.14);
   background: #ffffff;
   color: #0f0f11;
+  /* Same 24px floor. It was 20px tall from `padding: 2px 8px` at 10px text. */
+  min-height: 24px;
   font-size: 10px;
   font-weight: 600;
   padding: 2px 8px;
@@ -11190,5 +11226,105 @@ body.is-resizing .pane-resizer {
   .landing-nav-mobile-toggle {
     width: 28px;
     height: 28px;
+  }
+}
+
+
+/* ── Touch targets ────────────────────────────────────────────────────
+   Below 860px the pointer is a finger, and a finger is about 9mm — roughly
+   44 CSS pixels. Measured across every console page at 390px and 768px, the
+   controls a person actually reaches for were 17 to 32 pixels tall:
+
+     .hbtn.icon-only      32×32   the header icons, on all eight pages
+     .hbtn.ntf-bell       32×32   notifications
+     .pane-btn            32×32   the per-pane controls
+     .batch-btn           ~28     "Start all", "New agent"
+     .chip                ~24     "New file", the wiki "Edit"
+     .wiki-body a         60×17   every wiki page link
+     select               ~26     the agent picker
+
+   Height only, and never width: making these square would break the header
+   layout at exactly the width where there is least room. Nothing here changes
+   how any of it looks on a desktop — the whole block is behind the breakpoint
+   where a mouse stops being the input device. */
+@media (max-width: 860px) {
+  .hbtn,
+  .pane-btn,
+  .chip,
+  .batch-btn,
+  .send-btn,
+  .st-shortcuts-btn,
+  .mobile-agent-pill,
+  .settings-close-btn,
+  .cmd-mic,
+  .cmd-send {
+    min-height: 40px;
+  }
+
+  /* Square controls get the matching width, since they have no text to widen
+     them and 40×32 would still be an awkward thing to hit. */
+  .hbtn.icon-only,
+  .hbtn.mobile-only,
+  .hbtn.ntf-bell,
+  .pane-btn,
+  .cmd-mic,
+  .cmd-send,
+  .settings-close-btn {
+    min-width: 40px;
+  }
+
+  select,
+  .settings-select,
+  .settings-input,
+  .palette-in input,
+  .cmd-eg,
+  input[type='text'],
+  input[type='search'],
+  input[type='password'] {
+    min-height: 40px;
+  }
+
+  /* The pane controls sit inside a fixed-height header, so min-height alone
+     does nothing — the header has to give them the room first. */
+  .pane-head {
+    min-height: 48px;
+  }
+  .pane-head .pane-btn {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  /* A 22px-tall switch is the control people miss most often, because it
+     looks like the whole row should be tappable and only the switch is. */
+  .settings-switch {
+    min-height: 28px;
+  }
+  .settings-toggle-row {
+    min-height: 48px;
+    align-items: center;
+  }
+  .settings-input-icon-btn {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  /* The agent pills scroll horizontally; 13px tall was the strip collapsing,
+     not the pill being small. Give the strip its own height. */
+  .mobile-agent-strip {
+    min-height: 48px;
+    align-items: center;
+  }
+  .mobile-agent-pill {
+    min-height: 36px;
+  }
+
+  /* A 17px-tall link in a list is a miss waiting to happen. Padding rather
+     than height, so the text stays where the design put it and only the
+     reachable area grows. */
+  .wiki-body ul li a,
+  .wiki-body ol li a {
+    display: inline-block;
+    padding: 12px 0;
+    line-height: 1.2;
   }
 }
