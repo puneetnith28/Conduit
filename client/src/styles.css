@@ -7740,12 +7740,22 @@ body.is-resizing .pane-resizer {
   -webkit-mask-image: linear-gradient(to bottom, black 0%, black 88%, transparent 100%);
 }
 
-.landing-hero-bg-container canvas {
+.landing-hero-bg-art {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+  background-image: url('/bg.png');
+  background-position: center 66%;
+  background-size: cover;
+  background-repeat: no-repeat;
+  opacity: 0.38;
+  mix-blend-mode: multiply;
+  mask-image: linear-gradient(to bottom, black 0%, black 82%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 82%, transparent 100%);
+  filter: saturate(1.1) hue-rotate(-8deg) contrast(1.02);
   pointer-events: none;
+  transition: opacity 0.3s ease;
 }
 
 .landing-hero-bg-glow {
