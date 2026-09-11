@@ -341,6 +341,50 @@ export function createProject(name: string, cwd: string, description?: string): 
   return project;
 }
 
+/**
+ * Move a project's data directory when the project is renamed.
+ *
+ * `fs.renameSync` alone was not enough, and the way it failed was the worst
+ * kind: silently, in a warning, leaving the files under the old name while the
+ * project pointed at a new empty directory. Every shared file simply vanished
+ * from the UI.
+ *
+ * On Windows a directory cannot be renamed while anything holds a handle
+ * inside it, and something always does — the activity watcher is watching that
+ * exact directory, and it descends into subdirectories. So the bug only
+ * appeared once an agent had created a folder:
+ *
+ *   EPERM: operation not permitted, rename
+ *     '...\shared_content\myproject' -> '...\shared_content\myproject-v2'
+ *
+ * A flat directory renamed fine, which is why it survived so long.
+ *
+ * Copying and then deleting works where renaming does not, because the handle
+ * only blocks the directory entry, not reading through it. Copy first, verify,
+ * and only then remove: a rename that half-fails must never be the reason data
+ * is gone.
+ */
+function moveProjectDir(from: string, to: string): void {
+  if (!fs.existsSync(from) || from === to) return;
+  try {
+    if (!fs.existsSync(to)) {
+      try {
+        fs.renameSync(from, to);
+        return;
+      } catch { /* fall through to copy — see above */ }
+    }
+    // Merge into whatever is already there. `to` can exist because a watcher
+    // recreated it, and skipping in that case is how the files got stranded.
+    fs.cpSync(from, to, { recursive: true, force: true, errorOnExist: false });
+    if (fs.existsSync(to)) fs.rmSync(from, { recursive: true, force: true });
+  } catch (err) {
+    // Leave the source alone. Data under the old name is recoverable; data
+    // deleted after a failed copy is not.
+    console.error('[storage] could not move project data on rename — the files '
+      + `are still under the old name at ${from}:`, err);
+  }
+}
+
 export function updateProject(projectId: string, updates: Partial<Pick<Project, 'name' | 'description' | 'cwd'>>): Project | null {
   const data = getProjectData(projectId);
   if (!data) return null;
@@ -361,11 +405,7 @@ export function updateProject(projectId: string, updates: Partial<Pick<Project, 
       [sharedDir(data.project.name), sharedDir(next.name)],
       [wikiDir(data.project.name), wikiDir(next.name)],
     ]) {
-      try {
-        if (fs.existsSync(from) && !fs.existsSync(to)) fs.renameSync(from, to);
-      } catch (err) {
-        console.warn('[storage] could not move project data on rename:', err);
-      }
+      moveProjectDir(from, to);
     }
   }
   Object.assign(data.project, next);

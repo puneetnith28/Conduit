@@ -504,6 +504,94 @@ for (const [method, route, check] of ROUTES) {
 t(routeOk === ROUTES.length, `all ${ROUTES.length} REST routes answer with the right shape`,
   `${ROUTES.length - routeOk} wrong`);
 
+// ── Shared content, from the agent's side ─────────────────────────────
+//
+// The routes are covered below, but an agent does not use the routes. It
+// writes a file straight into the shared directory, and Conduit has to notice:
+// the listing reads the filesystem, and a watcher tells every open browser so
+// the tab does not sit there stale while work happens.
+//
+// That second half is the part that would break silently — the file is on
+// disk, the API would show it on the next reload, and nobody would notice the
+// live update had stopped until they wondered why the panel looked empty.
+console.log('shared content:');
+{
+  const sharedDir = path.join(os.homedir(), '.conduit', 'shared_content', name);
+  t(fs.existsSync(sharedDir), 'the project has a shared directory agents can write to', sharedDir);
+
+  // Listen the way a browser does, before anything changes.
+  const seen = [];
+  const liveWs = new WebSocket(BASE.replace(/^http/, 'ws') + '/ws',
+    AUTH ? { headers } : undefined);
+  await new Promise((res) => { liveWs.on('open', res); liveWs.on('error', res); });
+  liveWs.on('message', (raw) => {
+    try {
+      const m = JSON.parse(raw.toString());
+      if (m.type === 'content:updated' && m.projectId === projectId) seen.push(m.filename || '');
+    } catch { /* not for us */ }
+  });
+  await sleep(600);
+
+  // Write files the way an agent does: straight to disk, no API call.
+  fs.writeFileSync(path.join(sharedDir, 'from-agent.md'), 'written by an agent\n');
+  fs.mkdirSync(path.join(sharedDir, 'notes'), { recursive: true });
+  fs.writeFileSync(path.join(sharedDir, 'notes', 'nested.md'), 'a nested note\n');
+  await sleep(3000);
+
+  const list = (await api('GET', `/projects/${projectId}/content`)).json || [];
+  t(list.some((x) => x.filename === 'from-agent.md'),
+    'a file an agent writes to disk appears in the listing',
+    list.map((x) => x.filename).join(', '));
+  t(list.some((x) => /nested\.md$/.test(x.filename)),
+    'including one in a subdirectory',
+    list.map((x) => x.filename).join(', '));
+
+  const body = (await api('GET', `/projects/${projectId}/content/from-agent.md`)).json;
+  t(/written by an agent/.test(String(body?.content || '')),
+    'and its contents read back through the API');
+
+  t(seen.length > 0, 'and every open browser is told, so the tab updates itself',
+    'no content:updated broadcast arrived');
+
+  try { liveWs.close(); } catch { /* ignore */ }
+}
+
+// ── MCP messages, from the agent's side ───────────────────────────────
+//
+// `message_agent` is an MCP tool, but it is a thin wrapper over this route —
+// so this covers the routing and the delivery report without needing two live
+// agents and three minutes.
+console.log('agent messages:');
+{
+  const a = seeded[0], b = seeded[1];
+  if (a && b) {
+    const sent = await api('POST', `/projects/${projectId}/messages`, {
+      fromAgentId: a.id, target: b.name, message: 'checking the wire',
+    });
+    t(sent.status === 200 && sent.json?.toAgentId === b.id,
+      'a message routes to the named teammate', JSON.stringify(sent.json));
+    t(typeof sent.json?.delivered === 'boolean',
+      'and reports whether it was actually delivered',
+      'no delivered flag — the sender cannot tell a running agent from a stopped one');
+
+    const byId = await api('POST', `/projects/${projectId}/messages`, {
+      fromAgentId: a.id, target: b.id, message: 'by id this time',
+    });
+    t(byId.status === 200 && byId.json?.toAgentId === b.id, 'addressing by id works too');
+
+    const nobody = await api('POST', `/projects/${projectId}/messages`, {
+      fromAgentId: a.id, target: 'NoSuchTeammate', message: 'hello?',
+    });
+    t(nobody.status === 404, 'and an unknown teammate is a 404, not a silent drop',
+      String(nobody.status));
+
+    const events = ((await api('GET', `/activity?projectId=${projectId}`)).json || [])
+      .filter((e) => e.event === 'agent:message');
+    t(events.length >= 2, 'the MCP Messages panel has the exchange to show',
+      `${events.length} agent:message events`);
+  }
+}
+
 // ── the write routes, round-tripped ──────────────────────────────────
 // A 200 is not proof of anything. Every check below writes something and then
 // reads it back through a different route, because "returned OK but did not

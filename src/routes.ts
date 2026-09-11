@@ -231,6 +231,13 @@ export function createRouter(
     if (typeof req.body?.name === 'string') updates.name = str(req.body.name, 120);
     if (typeof req.body?.description === 'string') updates.description = str(req.body.description, 2000);
     if (typeof req.body?.cwd === 'string') updates.cwd = path.resolve(expandHome(str(req.body.cwd, 1000)));
+    // Release the directory before anything tries to move it.
+    //
+    // The watcher holds an open handle on shared_content/<name>, and on
+    // Windows that is enough to make renaming it fail outright. This used to
+    // run *after* the update, so every rename raced its own file watcher.
+    if (typeof updates.name === 'string') activity.unwatchProject(req.params.id);
+
     let project;
     try {
       project = storage.updateProject(req.params.id, updates);

@@ -9525,7 +9525,10 @@ body.is-resizing .pane-resizer {
   padding: 3px 8px;
   border-radius: 6px;
   background: rgba(244, 244, 245, 0.9);
-  color: #71717a;
+  /* 5.6:1 on that background. Was #71717a, which measures 4.4:1 at 10.5px —
+     just under the 4.5 small text needs, and the only contrast failure left
+     in the app. Same grey family, one step down. */
+  color: #5c5c66;
   border: 1px solid rgba(15, 15, 17, 0.06);
   white-space: nowrap;
 }
