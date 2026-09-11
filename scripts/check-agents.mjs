@@ -90,6 +90,20 @@ try {
     } else {
       // A refusal is a pass only if it explains itself.
       const msg = String(st.json?.error || '');
+
+      // "Agent not found" is not a refusal — it means the agent we just
+      // created is no longer in the project, which is a different and much
+      // more interesting failure than a missing CLI. Say what the project
+      // actually holds, so it is not mistaken for a preflight message.
+      if (st.status === 404) {
+        const now = (await api('GET', `/projects/${projectId}/agents`)).json || [];
+        console.log(`  ✗ ${cli.padEnd(9)} vanished after being created`);
+        console.log(`      created ${id}, project now holds ${now.length}: `
+          + `${now.map((x) => `${x.cli}/${x.id.slice(0, 8)}`).join(', ') || '(none)'}`);
+        console.log(`      still listed: ${now.some((x) => x.id === id)}`);
+        fail++;
+        continue;
+      }
       // Any refusal that says something specific is the intended behaviour;
       // only a silent or generic failure is a problem.
       const actionable = msg.length > 20 && !/^(internal|unknown)/i.test(msg);
