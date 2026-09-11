@@ -93,6 +93,15 @@ const env = { ...process.env };
 // app never starts. It is not ours to inherit.
 delete env.ELECTRON_RUN_AS_NODE;
 
+// Do not throw tabs at whoever is running this.
+//
+// Verifying that an external link cannot open *inside* the app means clicking
+// a real https link, and the app's correct response is to hand it to the
+// default browser — so every run of this audit opened example.com in the
+// user's actual session, twice. This suppresses only the hand-off; the deny
+// path, which is the security property under test, is untouched.
+env.CONDUIT_NO_EXTERNAL_OPEN = '1';
+
 const app = spawn(exe, [`--remote-debugging-port=${CDP_PORT}`], {
   env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: false,
 });
@@ -267,7 +276,7 @@ try {
     const bytes = (output.get(agentId) || '').trim().length;
     // Same trap as check-agents: the trust prompt is output, so a byte
     // count alone reports a blocked agent as a working one.
-    const text = output.get(id) || '';
+    const text = output.get(agentId) || '';
     const blocked = /trust\s*this\s*folder/i.test(text)
       || /Is\s*this\s*a\s*project\s*you\s*created/i.test(text);
     if (blocked) t(false, `${cli.padEnd(9)} is blocked on the workspace trust prompt`);
@@ -300,7 +309,11 @@ try {
 
   try { cdp?.close(); } catch { /* ignore */ }
 } catch (err) {
-  console.log(`  ! ${String(err).slice(0, 200)}`);
+  // Count it. This printed a bare "!" line and left `failures` alone, so a
+  // crash part-way through the agent sweep skipped every remaining check and
+  // the run still ended with "the packaged app works". A check that reports
+  // success after throwing is worse than one that fails.
+  t(false, 'the desktop pass completed', String(err).slice(0, 200));
 } finally {
   // ── quitting must take the agents with it ───────────────────────────
   // Deliberately NOT stopping the agent first: the question is whether closing

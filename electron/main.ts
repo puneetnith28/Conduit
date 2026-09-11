@@ -43,20 +43,35 @@ function isOwnPage(url: string): boolean {
  * Links still work — they open in the browser the user actually chose, which is
  * where an external link belongs.
  */
+/**
+ * Hand an external link to the user's browser?
+ *
+ * Always, except when something is deliberately driving the app to check that
+ * external links do not open *inside* it. That check has to click a real
+ * https link, and handing every one of those to the real browser meant running
+ * the desktop audit sprayed tabs across the user's actual session.
+ *
+ * Only the hand-off is suppressed. The deny — the half that keeps a remote
+ * page out of a window with preload and no address bar — still runs, so the
+ * check still tests the thing worth testing.
+ */
+const handOffExternalLinks = process.env.CONDUIT_NO_EXTERNAL_OPEN !== '1';
+
+function openOutside(url: string): void {
+  if (!handOffExternalLinks) return;
+  shell.openExternal(url).catch(() => { /* no browser, nothing to do */ });
+}
+
 function guardNavigation(contents: Electron.WebContents): void {
   contents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url) && !isOwnPage(url)) {
-      shell.openExternal(url).catch(() => { /* no browser, nothing to do */ });
-    }
+    if (/^https?:\/\//i.test(url) && !isOwnPage(url)) openOutside(url);
     return { action: 'deny' };
   });
 
   contents.on('will-navigate', (event, url) => {
     if (isOwnPage(url)) return;
     event.preventDefault();
-    if (/^https?:\/\//i.test(url)) {
-      shell.openExternal(url).catch(() => { /* no browser, nothing to do */ });
-    }
+    if (/^https?:\/\//i.test(url)) openOutside(url);
   });
 }
 
