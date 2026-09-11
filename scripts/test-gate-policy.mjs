@@ -10,7 +10,29 @@
  *
  * Run with:  node --experimental-strip-types scripts/test-gate-policy.mjs
  */
-import { classifyGate, gateQuestion } from '../src/gatePatterns.ts';
+import fs from 'node:fs';
+import { registerHooks } from 'node:module';
+import { fileURLToPath } from 'node:url';
+
+// `src/*.ts` imports its siblings with `.js` specifiers — what the TypeScript
+// build wants, and what `--experimental-strip-types` refuses to resolve. Map
+// the specifier back to the file that exists. Needed since gatePatterns gained
+// a dependency on gate-answer.
+registerHooks({
+  resolve(specifier, context, next) {
+    if (specifier.startsWith('.') && specifier.endsWith('.js') && context.parentURL) {
+      const asTs = new URL(specifier.replace(/\.js$/, '.ts'), context.parentURL);
+      if (fs.existsSync(fileURLToPath(asTs))) return { url: asTs.href, shortCircuit: true };
+    }
+    return next(specifier, context);
+  },
+});
+
+// Dynamic, so the resolve hook above is already registered when this
+// module graph loads. A static import is hoisted and resolved before any
+// top-level code runs, which is why the hook alone was not enough once
+// gatePatterns gained a sibling dependency.
+const { classifyGate, gateQuestion } = await import('../src/gatePatterns.ts');
 
 let passed = 0;
 let failed = 0;

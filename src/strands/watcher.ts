@@ -19,7 +19,7 @@ import * as runtime from '../daemon/runtime.js';
 import { createSupervisorAgent, type SupervisorUpdate } from './agent.js';
 import { supervisorDisabled, supervisorProvider, BEDROCK_MODEL_ID } from './config.js';
 import { isCredentialError, isModelUnavailable, shouldFallBack } from './failure.js';
-import { isTrustPrompt } from '../gatePatterns.js';
+import { isTrustPrompt, answerFor, typeKeys } from '../gate-answer.js';
 import {
   appendGroupChat, appendAuditLog, updateAgent, getAgent, getProjectData, readRecentAudit,
   type GroupChatEntry,
@@ -135,7 +135,11 @@ export function triggerGate(
   // queued for a human. Harmful ones never take this path, whatever the
   // setting says. See src/gate-policy.ts for where the line is drawn.
   if (shouldAutoApprove(clean, source)) {
-    runtime.writeToAgent(agentId, 'y\r');
+    // Type whatever this particular prompt needs, rather than a `y` that a
+    // menu would discard. `shouldAutoApprove` only says yes to prompts
+    // `answerFor` can handle, so the fallback here never fires in practice.
+    const answer = answerFor(clean);
+    typeKeys((d) => runtime.writeToAgent(agentId, d), answer?.approve ?? [{ data: 'y\r' }]);
     // One line: what was asked, and that it was allowed. Six lines of terminal
     // tail scrolling past on every file write is exactly the noise this feature
     // exists to remove.

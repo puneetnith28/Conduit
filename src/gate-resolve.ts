@@ -16,7 +16,7 @@
  */
 import { randomUUID } from 'crypto';
 import * as storage from './storage.js';
-import { isYesNoPrompt, isTrustPrompt } from './gatePatterns.js';
+import { answerFor, typeKeys } from './gate-answer.js';
 import type { DaemonClient } from './daemon/client.js';
 
 export type GateDecision = 'approve' | 'reject' | 'custom';
@@ -52,31 +52,25 @@ export function resolveGate(
   const customInput = opts.customInput || '';
   storage.updateAgent(projectId, agentId, { pendingGate: undefined });
 
-  const yesNo = gate.source === 'regex' && isYesNoPrompt(gate.prompt);
-  // The trust prompt is a two-line arrow menu, not a y/n question, and the
-  // highlighted row is "No, exit" — so Down-then-Enter is the only thing that
-  // means yes here. Enter on its own would quit the agent.
-  const trust = gate.source === 'regex' && isTrustPrompt(gate.prompt);
+  // One source of truth for "which keys answer this", shared with the
+  // auto-approval path in the watcher. See src/gate-answer.ts.
+  const answer = gate.source === 'regex' ? answerFor(gate.prompt) : null;
   let action = 'none';
+
+  const type = (keys: { data: string; delayMs?: number }[]) =>
+    typeKeys((d) => daemon.writeTerminal(agent.id, d), keys);
+
   try {
     if (decision === 'approve') {
-      if (trust) {
-        daemon.writeTerminal(agent.id, '\u001b[B');
-        // The gap matters. At 120ms the Enter overtook the redraw often
-        // enough to land on "No, exit" and quit the agent outright — the
-        // worst possible outcome for a button labelled Approve. 600ms is
-        // far longer than the TUI needs and costs nothing: a human has
-        // already clicked, and this runs after their click.
-        setTimeout(() => { try { daemon.writeTerminal(agent.id, '\r'); } catch { /* gone */ } }, 600);
-        action = 'trusted the workspace';
-      } else if (yesNo) { daemon.writeTerminal(agent.id, 'y\r'); action = 'sent y'; }
+      if (answer) { type(answer.approve); action = answer.describe; }
+      // No answer means we do not know which key means yes. Saying nothing is
+      // correct — guessing at a keyboard is how you approve the wrong thing —
+      // but the caller is told, so the UI can say the agent still needs a
+      // keypress in its terminal rather than closing as though it were done.
     } else if (decision === 'reject') {
-      if (trust) {
-        // Escape cancels the prompt, which is what "no" means here.
-        daemon.writeTerminal(agent.id, '\u001b');
-        action = 'declined the workspace';
-      } else if (yesNo) { daemon.writeTerminal(agent.id, 'n\r'); action = 'sent n'; }
+      if (answer) { type(answer.reject); action = 'declined the prompt'; }
       else {
+        // Nothing to type, so stop the agent and tell it why.
         daemon.command({ op: 'terminal:interrupt', agentId: agent.id });
         setTimeout(() => {
           daemon.request('agent:inject', {

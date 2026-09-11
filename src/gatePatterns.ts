@@ -11,6 +11,8 @@
  * `rm -rf` on a command line is.
  */
 
+import { isAnswerable } from './gate-answer.js';
+
 export const COMMON_GATE_PATTERNS = [
   /\[y\/N\]/i,
   /\[Y\/n\]/i,
@@ -41,18 +43,6 @@ export const COMMON_GATE_PATTERNS = [
   /trust\s*this\s*folder/i,
   /Is\s*this\s*a\s*project\s*you\s*created\s*or\s*one\s*you\s*trust/i,
 ];
-
-/**
- * Is this the workspace trust prompt?
- *
- * It is answered with arrow keys, not a letter, and the highlighted default is
- * "No, exit" — so the obvious guesses are both wrong: `y` does nothing and a
- * bare Enter quits the agent.
- */
-export function isTrustPrompt(text: string): boolean {
-  return /trust\s*this\s*folder/i.test(text)
-    || /Is\s*this\s*a\s*project\s*you\s*created\s*or\s*one\s*you\s*trust/i.test(text);
-}
 
 export const HIGH_RISK_KEYWORDS = [
   /\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\b/,   // rm -rf / rm -fr
@@ -113,12 +103,30 @@ export function isYesNoPrompt(text: string): boolean {
  */
 export type GateRisk = 'routine' | 'harmful';
 
+// `isTrustPrompt` and the keystrokes that answer each prompt live in
+// src/gate-answer.ts, which is also what decides whether a prompt can be
+// handled without a human at all.
+
 export function classifyGate(prompt: string, source: 'regex' | 'supervisor'): GateRisk {
   // A model already read the context and called this risky. A regex does not
   // get to overrule that.
   if (source === 'supervisor') return 'harmful';
   if (checkGate(prompt).highRisk) return 'harmful';
-  return isYesNoPrompt(prompt) ? 'routine' : 'harmful';
+
+  // Routine means two things at once, and it used to mean only the first:
+  //
+  //   - nothing in the text is destructive (checked above), and
+  //   - Conduit knows which keys answer it.
+  //
+  // The second half was `isYesNoPrompt`, which is narrower than it looks. Any
+  // prompt that was not literally `[y/N]` fell through to 'harmful', so a
+  // person got asked about every one of them — including Claude Code's
+  // workspace trust prompt, which every new agent hits before it can do
+  // anything at all. That is not a dangerous decision; it is a door held shut.
+  //
+  // `isAnswerable` is the honest version of the test: if we cannot type an
+  // answer, a human has to, and that is the only reason left to interrupt one.
+  return isAnswerable(prompt) ? 'routine' : 'harmful';
 }
 
 /**
