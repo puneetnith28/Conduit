@@ -192,10 +192,17 @@ export default function ConduitAgentDemo({ onOpenConsole }: ConduitAgentDemoProp
           </div>
 
           <div className="window-center-brand">
-            <span className="brand-logo-icon">◈</span>
-            <span className="brand-app-name">CONDUIT</span>
-            <span className="brand-sep">/</span>
-            <span className="brand-project">core-auth-service</span>
+            <div className="window-project-pill">
+              <Ic.folder size={12} className="project-folder-icon" />
+              <span className="project-title-name">core-auth-service</span>
+              <span className="project-branch-divider">/</span>
+              <span className="project-branch-tag">
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" className="git-branch-svg">
+                  <path fillRule="evenodd" d="M11.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122V6A2.5 2.5 0 0110 8.5H6a1 1 0 00-1 1v1.128a2.251 2.251 0 11-1.5 0V5.372a2.25 2.25 0 111.5 0v1.836A2.492 2.492 0 016 7h4a1 1 0 001-1v-.628A2.25 2.25 0 019.5 3.25zM4.25 12a.75.75 0 100 1.5.75.75 0 000-1.5zM3.5 3.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0z" />
+                </svg>
+                <span>main</span>
+              </span>
+            </div>
           </div>
 
           <div className="window-status-capsule">

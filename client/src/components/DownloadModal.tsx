@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import Ic from './Icons';
 import { detectUserOS, type DetectedPlatform, type PlatformFamily } from '../utils/detectOS';
 
 /** One artifact reported by `GET /downloads/` — a real file on disk. */
@@ -95,6 +97,15 @@ export default function DownloadModal({ isOpen, onClose }: DownloadModalProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const handleDownload = (filename: string) => {
@@ -113,11 +124,11 @@ export default function DownloadModal({ isOpen, onClose }: DownloadModalProps) {
   const primary = mine?.files.find((f) => !f.name.toLowerCase().endsWith('.zip')) || mine?.files[0];
   const anyBuilds = platforms?.some((p) => p.files.length > 0);
 
-  return (
+  const modalContent = (
     <div className="download-modal-overlay" onClick={onClose}>
       <div className="download-modal-container" data-tour="download-modal" onClick={(e) => e.stopPropagation()}>
         <button className="download-modal-close" onClick={onClose} aria-label="Close modal">
-          ×
+          <Ic.x size={16} />
         </button>
 
         <div className="download-section-header">
@@ -208,4 +219,6 @@ export default function DownloadModal({ isOpen, onClose }: DownloadModalProps) {
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }
