@@ -24,6 +24,7 @@ import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import type { BrainEngine, BrainEvent, BrainMessage, BrainState, BrainStatus } from './protocol.js';
 import { findOnPath } from '../cli-registry.js';
+import * as storage from '../storage.js';
 import { DAEMON_HTTP_URL } from './protocol.js';
 
 const __dirname_ = path.dirname(fileURLToPath(import.meta.url));
@@ -43,6 +44,49 @@ const AGENTS_MD_PATH = path.join(BRAIN_DIR, 'AGENTS.md');
  * creation — `exec resume` does NOT re-read it — so a rule that must apply to
  * existing conversations has to ride on the turn itself.
  */
+/**
+ * What exists right now, restated on every turn.
+ *
+ * The Keeper keeps one long conversation and resumes it across turns, so a
+ * project it listed an hour ago is still sitting in its transcript after the
+ * project is deleted — and it goes on offering the agents that used to be in
+ * it. Its tools would tell it the truth, but nothing makes it ask before it
+ * assumes, and a model rarely re-checks something it believes it already knows.
+ *
+ * So the truth rides on the turn, the same way the spoken-summary rule does.
+ * It is deliberately terse: names and statuses, no ids, no paths. A conduit
+ * with five projects and twenty agents costs a few hundred characters, which
+ * is far less than one wrong suggestion costs the person reading it.
+ */
+function currentRoster(): string {
+  let projects;
+  try {
+    projects = storage.listProjects();
+  } catch {
+    return '';   // storage unreadable — better to say nothing than to guess
+  }
+
+  if (!projects.length) {
+    return '\n\n---\n[Current state] There are no projects. Anything you '
+      + 'remember from earlier in this conversation has been deleted.';
+  }
+
+  const lines = projects.map((proj) => {
+    let agents: ReturnType<typeof storage.listAgents> = [];
+    try { agents = storage.listAgents(proj.id); } catch { /* keep empty */ }
+    const who = agents.length
+      ? agents.map((a) => `${a.name} (${a.cli})`).join(', ')
+      : 'no agents';
+    return `- ${proj.name}: ${who}`;
+  });
+
+  return '\n\n---\n[Current state] These are the only projects and agents that '
+    + 'exist right now:\n' + lines.join('\n')
+    + '\nAnything else you remember from earlier in this conversation has been '
+    + 'deleted. Never offer, reference, or send work to a project or agent that '
+    + 'is not on this list.';
+}
+
 const TURN_SUFFIX =
   '\n\n---\n[System reminder] You are being heard, not read. Talk like a ' +
   'colleague standing next to the user: short, direct, no preamble.\n' +
@@ -445,7 +489,10 @@ export class Orchestrator {
         // only read at session start.
         sess.child.stdin?.write(JSON.stringify({
           type: 'user',
-          message: { role: 'user', content: [{ type: 'text', text: prompt + TURN_SUFFIX }] },
+          message: {
+            role: 'user',
+            content: [{ type: 'text', text: prompt + TURN_SUFFIX + currentRoster() }],
+          },
         }) + '\n');
       } catch (err) {
         this.append(conv, {
@@ -694,7 +741,7 @@ export class Orchestrator {
       child.stdin?.on('error', () => { /* ignore broken pipe */ });
       // The spoken-summary rule rides on every turn — exec resume won't pick
       // it up from AGENTS.md.
-      child.stdin?.write(prompt + TURN_SUFFIX);
+      child.stdin?.write(prompt + TURN_SUFFIX + currentRoster());
       child.stdin?.end();
 
       child.stdout?.on('data', (d: Buffer) => {
