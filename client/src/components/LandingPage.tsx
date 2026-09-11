@@ -7,6 +7,7 @@ import { BrandIcons } from './ecosystem/BrandIcons';
 import DownloadModal from './DownloadModal';
 import { WatchClassifyDemo, GateApprovalDemo } from './safety/SafetyLoopShowcase';
 import InteractiveCanvas from './InteractiveCanvas';
+import FaqSection from './FaqSection';
 
 interface LandingPageProps {
   onOpenConsole: () => void;
@@ -21,7 +22,6 @@ const navItems = [
 ];
 
 export default function LandingPage({ onOpenConsole, onStartTour }: LandingPageProps) {
-  const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [isDownloadOpen, setIsDownloadOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<string>('how-it-works');
@@ -306,76 +306,7 @@ export default function LandingPage({ onOpenConsole, onStartTour }: LandingPageP
       <WorkflowShowcaseSection onOpenConsole={onOpenConsole} />
 
       {/* Section 5: Real FAQ */}
-      <section id="faq" className="landing-section faq-sec">
-        <h2 className="section-title">Frequently asked questions</h2>
-
-        <div className="faq-list">
-          {/* FAQ 1 */}
-          <div className={'faq-item' + (openFaq === 0 ? ' open' : '')} onClick={() => setOpenFaq(openFaq === 0 ? null : 0)}>
-            <div className="faq-question">
-              <span>What is Conduit and who is it built for?</span>
-              <span className="faq-toggle">{openFaq === 0 ? '×' : '+'}</span>
-            </div>
-            {openFaq === 0 && (
-              <div className="faq-answer">
-                Conduit is a multi-agent control center for professional software engineers who want to run multiple AI coding agents (Claude Code, Codex, Gemini CLI, OpenCode, GPT-OSS on Groq, Nemotron on OpenRouter) side by side in real terminals while retaining full visibility and veto power over actions.
-              </div>
-            )}
-          </div>
-
-          {/* FAQ 2 */}
-          <div className={'faq-item' + (openFaq === 1 ? ' open' : '')} onClick={() => setOpenFaq(openFaq === 1 ? null : 1)}>
-            <div className="faq-question">
-              <span>How do approval gates protect my codebase?</span>
-              <span className="faq-toggle">{openFaq === 1 ? '×' : '+'}</span>
-            </div>
-            {openFaq === 1 && (
-              <div className="faq-answer">
-                Conduit uses two layers of protection: instant regex pattern detection for dangerous shell commands (like force pushes, rm -rf, drop tables) and periodic Bedrock classification. When a gate triggers, the agent is paused and surfaced in an approval modal—nothing is sent without your confirmation.
-              </div>
-            )}
-          </div>
-
-          {/* FAQ 3 */}
-          <div className={'faq-item' + (openFaq === 2 ? ' open' : '')} onClick={() => setOpenFaq(openFaq === 2 ? null : 2)}>
-            <div className="faq-question">
-              <span>Can agents collaborate and talk to each other?</span>
-              <span className="faq-toggle">{openFaq === 2 ? '×' : '+'}</span>
-            </div>
-            {openFaq === 2 && (
-              <div className="faq-answer">
-                Yes. Agents in the same project can share context via the Project Wiki (Karpathy's LLM-wiki pattern), access shared folders (`shared_content/`), and communicate directly via MCP tools (`message_agent`, `list_teammates`).
-              </div>
-            )}
-          </div>
-
-          {/* FAQ 4 */}
-          <div className={'faq-item' + (openFaq === 3 ? ' open' : '')} onClick={() => setOpenFaq(openFaq === 3 ? null : 3)}>
-            <div className="faq-question">
-              <span>Is my data private and can I run it locally?</span>
-              <span className="faq-toggle">{openFaq === 3 ? '×' : '+'}</span>
-            </div>
-            {openFaq === 3 && (
-              <div className="faq-answer">
-                Yes. Conduit runs entirely on your local machine or private cloud instance. All project data, agent transcripts, and audit logs are stored locally under `~/.conduit/`. HTTP Basic Auth (`CONDUIT_AUTH`) protects the dashboard when deployed remotely.
-              </div>
-            )}
-          </div>
-
-          {/* FAQ 5 */}
-          <div className={'faq-item' + (openFaq === 4 ? ' open' : '')} onClick={() => setOpenFaq(openFaq === 4 ? null : 4)}>
-            <div className="faq-question">
-              <span>What platforms is Conduit available on?</span>
-              <span className="faq-toggle">{openFaq === 4 ? '×' : '+'}</span>
-            </div>
-            {openFaq === 4 && (
-              <div className="faq-answer">
-                The standalone Windows desktop application (`Conduit.exe`) is available for immediate download. Native packages for macOS (Apple Silicon / Intel) and Linux (AppImage / Debian) are currently in build and coming soon. You can also run Conduit on Linux/macOS directly from source with Node 20+.
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
+      <FaqSection />
 
       {/* Desktop App Download Modal Popup */}
       <DownloadModal isOpen={isDownloadOpen} onClose={() => setIsDownloadOpen(false)} />
