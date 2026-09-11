@@ -7216,7 +7216,7 @@ body.is-resizing .pane-resizer {
     no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
 }
 
-.landing-page > *:not(.landing-bg-gradient-grid):not(.landing-nav-wrapper) {
+.landing-page > *:not(.landing-bg-gradient-grid):not(.landing-nav-wrapper):not(.download-modal-overlay) {
   position: relative;
   z-index: 1;
 }
@@ -11426,20 +11426,24 @@ body.is-resizing .pane-resizer {
    Download Center Modal Dialog Styles
    ========================================================== */
 .download-modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(15, 15, 17, 0.65);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10000;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  background: rgba(15, 15, 17, 0.72) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 99999 !important;
   padding: 24px;
-  animation: modalFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
 }
 
 .download-modal-container {
@@ -11453,7 +11457,8 @@ body.is-resizing .pane-resizer {
   padding: 48px 40px;
   position: relative;
   box-shadow: 0 24px 60px -12px rgba(15, 15, 17, 0.35);
-  animation: modalSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: modalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  margin: auto;
 }
 
 @media (max-width: 640px) {
