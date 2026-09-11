@@ -97,6 +97,21 @@ const cases = [
   ['DELETE', `/api/projects/${pid}?removeData=true`],
 ];
 
+// Everything that existed before we started throwing rubbish at the server.
+//
+// Some of these payloads are *supposed* to succeed: `name: '../../../evil'`
+// tests that a traversal in a project name is sanitised, and Conduit correctly
+// sanitises it to "evil" and creates the project. The check only ever deleted
+// the fixture it created on purpose, so that one survived every run and piled
+// up in the user's project list — there was an "evil" sitting in it all day.
+//
+// Comparing against a snapshot cleans up whatever the payloads managed to
+// create, including the ones nobody thought to track.
+const projectsBefore = new Set(
+  ((await (await fetch(`${BASE}/api/projects`)).json().catch(() => [])) || [])
+    .map((x) => x.id),
+);
+
 let bad = 0;
 for (const [method, route, body, ct] of cases) {
   const r = await hit(method, route, body, ct);
@@ -109,6 +124,21 @@ for (const [method, route, body, ct] of cases) {
 
 // The point of the whole exercise: none of the above took the server with it.
 const after = await hit('GET', '/api/health');
+// Take back anything the payloads created. A check that leaves projects behind
+// is a check that makes the thing it is testing worse.
+{
+  const after = (await (await fetch(`${BASE}/api/projects`)).json().catch(() => [])) || [];
+  const strays = after.filter((x) => !projectsBefore.has(x.id));
+  for (const x of strays) {
+    await fetch(`${BASE}/api/projects/${x.id}?removeData=true`, { method: 'DELETE' })
+      .catch(() => { /* best effort */ });
+  }
+  if (strays.length) {
+    console.log(`\ncleaned up ${strays.length} project(s) the payloads created: `
+      + strays.map((x) => JSON.stringify(x.name)).join(', '));
+  }
+}
+
 console.log(`\nserver alive afterwards: ${after.status === 200}`);
 // The delete above must have taken Conduit's section back out of the fixture's
 // own CLAUDE.md. Starting an agent edits the user's repository; deleting the
