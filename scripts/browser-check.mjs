@@ -71,13 +71,31 @@ try {
   await send('Runtime.enable', {}, sessionId);
   await send('Log.enable', {}, sessionId);
   await send('Page.enable', {}, sessionId);
-  await send('Page.navigate', { url: URL_ }, sessionId);
-  await sleep(6000);
-
   const evalText = async (expr) => {
     const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true }, sessionId);
     return r.result?.result?.value;
   };
+
+  /**
+   * Wait for the page to reach a state, rather than guessing how long it takes.
+   *
+   * These were all fixed sleeps, and they started failing intermittently when
+   * the landing page gained a photographic background and animated demos —
+   * three assertions going red in a row because the first one's 1500ms was no
+   * longer enough for the sidebar to refresh, and everything after it depended
+   * on that click landing. Nothing was wrong with the app.
+   */
+  const waitFor = async (expr, ms = 15_000) => {
+    const until = Date.now() + ms;
+    while (Date.now() < until) {
+      try { if (await evalText(`!!(${expr})`)) return true; } catch { /* mid-navigation */ }
+      await sleep(200);
+    }
+    return false;
+  };
+
+  await send('Page.navigate', { url: URL_ }, sessionId);
+  await waitFor('document.querySelector("#root")?.firstElementChild');
 
   // `/` serves the marketing landing page; the dashboard is behind its CTA.
   // Click through so the rest of the checks run against the control center.
@@ -85,7 +103,7 @@ try {
   if (onLanding) {
     console.log('  landing page shown — clicking "Open Control Center"');
     await evalText(`[...document.querySelectorAll('button')].find(b => /open control center/i.test(b.textContent))?.click()`);
-    await sleep(4000);
+    await waitFor('document.querySelector(".gr-tabs")');
   }
 
   const title = await evalText('document.title');
@@ -131,12 +149,15 @@ try {
     const check = (cond, label) => { console.log(`  ${cond ? '✓' : '✗'} ${label}`); if (!cond) deepOk = false; };
     try {
       await fetch(`${api}/projects/${proj.id}/agents`, { method: 'POST', headers: hdrs, body: JSON.stringify({ name: 'Alpha', cli: 'claude' }) });
-      await sleep(1500); // org:changed → sidebar refresh
+      // org:changed → sidebar refresh. A websocket round trip and a render,
+      // so wait for the row rather than betting on how long that takes.
+      await waitFor(`[...document.querySelectorAll('.sb-project .n')].some(e => e.textContent === ${JSON.stringify(name)})`);
       const inSidebar = await evalText(`[...document.querySelectorAll('.sb-project .n')].some(e => e.textContent === ${JSON.stringify(name)})`);
       check(inSidebar, 'new project appears in sidebar via org:changed');
       await evalText(`[...document.querySelectorAll('.sb-project')].find(b => b.textContent.includes(${JSON.stringify(name)}))?.click()`);
-      await sleep(1200);
+      await waitFor(`document.querySelector('.gr-tabs')`);
       check(await evalText(`!!document.querySelector('.gr-tabs')`), 'project view opens with tabs');
+      await waitFor(`[...document.querySelectorAll('.pane-agent-name')].some(e => e.textContent === 'Alpha')`);
       check(await evalText(`[...document.querySelectorAll('.pane-agent-name')].some(e => e.textContent === 'Alpha')`), 'agent pane renders');
       // Match on what the pane *is*, not on how it is currently styled: a
       // refactor renamed the start button and this went red while the UI was
