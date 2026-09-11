@@ -43,6 +43,7 @@
     "check:voice-live": "node scripts/check-voice-live.mjs",
     "check:ui": "node scripts/check-ui.mjs",
     "check:org": "node scripts/check-org.mjs",
+    "check:layout": "node scripts/check-layout.mjs",
     "check:lifecycle": "node scripts/check-lifecycle.mjs"
   },
   "dependencies": {
