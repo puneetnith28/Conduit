@@ -149,8 +149,8 @@ export function InteractiveCanvas({
         const v = getVector(dot);
         const yFrac = dot.y / totalH;
         let alpha = 1;
-        if (yFrac > 0.6) {
-          alpha = Math.max(0, 1 - (yFrac - 0.6) / 0.32);
+        if (yFrac > 0.88) {
+          alpha = Math.max(0, 1 - (yFrac - 0.88) / 0.12);
         }
         if (alpha <= 0.01) continue;
 
