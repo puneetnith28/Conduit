@@ -34,10 +34,68 @@ const MAX_HISTORY = 240;
 /** Cap how many conversations are kept (oldest dropped beyond this). */
 const MAX_CONVERSATIONS = 50;
 
+/**
+ * The Keeper's working directory — and it is a working directory, not a store.
+ *
+ * The Keeper is a real Claude Code process with file tools and
+ * `bypassPermissions`, and this is its cwd. Anything left here is something it
+ * can read, grep and believe.
+ *
+ * Its own transcript archive used to live right here as `state.json`: 132KB of
+ * every conversation it had ever had, including 98 mentions of a project that
+ * had since been deleted and 36 of another. Asked about a deleted project, it
+ * could find one — not by remembering, but by reading its own chat history off
+ * the disk and treating it as current fact. That is exactly what was reported:
+ * "it went through older chats".
+ *
+ * So the cwd now holds only what the Keeper is *supposed* to read — its own
+ * instructions — and everything else moved next door.
+ */
 const BRAIN_DIR = path.join(os.homedir(), '.conduit', 'brain');
-const CODEX_HOME = path.join(BRAIN_DIR, 'codex-home');
-const STATE_PATH = path.join(BRAIN_DIR, 'state.json');
 const AGENTS_MD_PATH = path.join(BRAIN_DIR, 'AGENTS.md');
+
+/**
+ * Everything the Keeper must not be able to read as though it were context.
+ *
+ * Deliberately a sibling of the cwd rather than a subdirectory of it: a
+ * subdirectory is still inside the tree its tools walk.
+ *
+ * `codex-home` is here for a second reason — it holds `auth.json`. A
+ * credential in an agent's working directory is a credential the agent can
+ * read.
+ */
+const BRAIN_PRIVATE = path.join(os.homedir(), '.conduit', 'brain-private');
+const CODEX_HOME = path.join(BRAIN_PRIVATE, 'codex-home');
+const STATE_PATH = path.join(BRAIN_PRIVATE, 'state.json');
+
+/**
+ * Move an existing install's files out of the Keeper's reach, once.
+ *
+ * Anyone upgrading already has a transcript and a Codex home sitting in the
+ * cwd. Leaving them there would mean the fix only helped new installs, which
+ * is the wrong way round — an existing install is precisely the one with a
+ * long history full of deleted projects.
+ */
+function movePrivateFilesOutOfCwd(): void {
+  try {
+    fs.mkdirSync(BRAIN_PRIVATE, { recursive: true });
+    for (const [from, to] of [
+      [path.join(BRAIN_DIR, 'state.json'), STATE_PATH],
+      [path.join(BRAIN_DIR, 'codex-home'), CODEX_HOME],
+    ]) {
+      if (!fs.existsSync(from) || fs.existsSync(to)) continue;
+      fs.renameSync(from, to);
+      console.log(`[brain] moved ${path.basename(from)} out of the Keeper's working directory`);
+    }
+  } catch (err) {
+    // Never block start-up on this. Worst case the old layout persists and
+    // the Keeper can still read its own history, which is where we were.
+    console.warn('[brain] could not relocate private files:',
+      err instanceof Error ? err.message : String(err));
+  }
+}
+
+movePrivateFilesOutOfCwd();
 
 /**
  * Appended to every turn's input. Codex bakes AGENTS.md in at conversation
@@ -171,10 +229,12 @@ accurate, and proactive about what needs the user's attention.
    Good: \`🔊 Three agents, all stopped.\`
    Good: \`🔊 Claude finished the auth fix and is waiting — do you want it to
    run the tests?\`
-   Bad:  \`🔊 There is a single project called ewdsf3se with three agents in
-   it. They are named gere on Claude, cdlcnkdc on GPT, and dsdcwae on
+   Bad:  \`🔊 There is a single project called example-project with three
+   agents in it. They are named Alpha on Claude, Beta on GPT, and Gamma on
    Nemotron, and all three are currently stopped. Just say the word and I
    will start any of them up and put them to work.\`
+   (Names in these examples are invented. Never repeat them as though they
+   were projects or agents that exist — only what the tools tell you does.)
 
 ## Boundaries (Phase 1)
 
@@ -859,6 +919,7 @@ export class Orchestrator {
   /** Write the brain's AGENTS.md + dedicated Codex home (config + auth). */
   private ensureBrainEnv(): void {
     fs.mkdirSync(BRAIN_DIR, { recursive: true });
+    fs.mkdirSync(BRAIN_PRIVATE, { recursive: true });
     fs.mkdirSync(CODEX_HOME, { recursive: true });
 
     fs.writeFileSync(AGENTS_MD_PATH, AGENTS_MD, 'utf-8');
@@ -979,6 +1040,8 @@ export class Orchestrator {
   private save(): void {
     try {
       fs.mkdirSync(BRAIN_DIR, { recursive: true });
+      fs.mkdirSync(BRAIN_PRIVATE, { recursive: true });
+    fs.mkdirSync(BRAIN_PRIVATE, { recursive: true });
       const data: PersistedState = {
         conversations: this.conversations,
         currentId: this.currentId,
