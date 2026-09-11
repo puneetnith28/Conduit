@@ -24,7 +24,35 @@ export const COMMON_GATE_PATTERNS = [
   /Do you want to (?:make this edit|run this command|allow)/i,
   /Allow (?:edit|command|tool)\?/i,
   /Are you sure(?: you want to)?[^\n]{0,60}\?/i,
+  // Claude Code's first-run workspace trust prompt:
+  //
+  //   Quick safety check: Is this a project you created or one you trust?
+  //   ❯ No, exit
+  //     Yes, I trust this folder
+  //
+  // Nothing matched this, so every freshly created Claude agent sat on it
+  // forever: started, drawing a terminal, producing no output and raising no
+  // gate. It reads as "the agent is taking a long time" and it is actually
+  // "the agent is waiting for a keypress nobody was told about".
+  //
+  // `\s*` between the words because the terminal positions each one
+  // separately — stripped of escapes the line arrives as
+  // "Yes,Itrustthisfolder", with no spaces at all.
+  /trust\s*this\s*folder/i,
+  /Is\s*this\s*a\s*project\s*you\s*created\s*or\s*one\s*you\s*trust/i,
 ];
+
+/**
+ * Is this the workspace trust prompt?
+ *
+ * It is answered with arrow keys, not a letter, and the highlighted default is
+ * "No, exit" — so the obvious guesses are both wrong: `y` does nothing and a
+ * bare Enter quits the agent.
+ */
+export function isTrustPrompt(text: string): boolean {
+  return /trust\s*this\s*folder/i.test(text)
+    || /Is\s*this\s*a\s*project\s*you\s*created\s*or\s*one\s*you\s*trust/i.test(text);
+}
 
 export const HIGH_RISK_KEYWORDS = [
   /\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\b/,   // rm -rf / rm -fr

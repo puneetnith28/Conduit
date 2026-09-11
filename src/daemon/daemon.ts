@@ -106,6 +106,28 @@ function setStatus(agentId: string, status: string) {
   }
 }
 
+/**
+ * Clear a gate the agent has plainly moved past.
+ *
+ * A gate is raised from what the terminal printed, and nothing used to take it
+ * back down except a human resolving it. If the agent answered the prompt
+ * itself, or the match was a false positive, the gate stayed pending forever
+ * and the UI went on reporting an agent as waiting for input that was not
+ * waiting for anything.
+ *
+ * A lifecycle hook saying "running" is proof: Claude only reports PreToolUse /
+ * PostToolUse / UserPromptSubmit while it is executing, and it cannot be
+ * executing and blocked on a prompt at the same time.
+ */
+function clearStaleGate(agentId: string) {
+  const projectId = findAgentProject(agentId);
+  if (!projectId) return;
+  const agent = storage.getAgent(projectId, agentId);
+  if (!agent?.pendingGate) return;
+  storage.updateAgent(projectId, agentId, { pendingGate: undefined });
+  broadcast({ kind: 'event', event: 'gate:resolved', agentId });
+}
+
 /** Status callback handed to the runtimes — 'running' on spawn, 'stopped' on exit. */
 function onAgentStatus(agentId: string, status: string) {
   setStatus(agentId, status);
@@ -399,7 +421,12 @@ async function handleHttp(httpReq: IncomingMessage, res: ServerResponse) {
       // Feed the dispatch layer's turn detector (ask_agent) first.
       hookEvents.emit('hook', agentId, event);
       const status = hookEventToStatus(event);
-      if (status && runtime.isAgentRunning(agentId)) setStatus(agentId, status);
+      if (status && runtime.isAgentRunning(agentId)) {
+        setStatus(agentId, status);
+        // Executing and blocked on a prompt are mutually exclusive, so a
+        // 'running' hook retires any gate still standing against this agent.
+        if (status === 'running') clearStaleGate(agentId);
+      }
     }
     res.writeHead(204); // empty body — keeps `curl -s` output silent
     res.end();

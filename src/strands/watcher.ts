@@ -19,6 +19,7 @@ import * as runtime from '../daemon/runtime.js';
 import { createSupervisorAgent, type SupervisorUpdate } from './agent.js';
 import { supervisorDisabled, supervisorProvider, BEDROCK_MODEL_ID } from './config.js';
 import { isCredentialError, isModelUnavailable, shouldFallBack } from './failure.js';
+import { isTrustPrompt } from '../gatePatterns.js';
 import {
   appendGroupChat, appendAuditLog, updateAgent, getAgent, getProjectData, readRecentAudit,
   type GroupChatEntry,
@@ -112,7 +113,23 @@ export function triggerGate(
   if (!agent) return false;
   if (agent.pendingGate) return false;
 
-  const clean = trimToLineStart(prompt.trim(), 1500);
+  let clean = trimToLineStart(prompt.trim(), 1500);
+
+  // The trust prompt draws itself with cursor moves, so the raw slice of
+  // terminal that matched is usually a fragment of the command line and tells
+  // the user nothing about what they are being asked to allow. Say it plainly
+  // instead. The wording keeps the phrase "trust this folder" because that is
+  // what `isTrustPrompt` matches on when the decision is carried out.
+  if (isTrustPrompt(clean)) {
+    clean = [
+      `${agent.name} is asking whether to trust this folder before it reads,`,
+      'edits or runs anything in it:',
+      '',
+      `    ${agent.cwd}`,
+      '',
+      'Approve to let it start. Reject and it will exit.',
+    ].join('\n');
+  }
 
   // Ordinary y/n prompts — "create README.md?" — are answered here rather than
   // queued for a human. Harmful ones never take this path, whatever the

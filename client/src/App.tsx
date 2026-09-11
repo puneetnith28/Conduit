@@ -825,7 +825,14 @@ export default function App() {
    * listening, and two things speaking at once is worse than either.
    */
   const liveVoice = useRealtimeVoice({
-    enabled: voice.cfg.engine === 'live',
+    // `wakeEnabled` is the microphone switch in the HUD, and the live session
+    // used to ignore it completely — it checked only that the engine was set
+    // to live. Turning the mic off stopped the wake word (which is already
+    // stood down on this path) and left Nova holding an open microphone,
+    // streaming whatever it heard, with the UI showing the mic as off.
+    //
+    // The switch now means the same thing on both paths: off is off.
+    enabled: voice.cfg.engine === 'live' && wakeEnabled,
     onDeferred: (text) => {
       // An agent answering minutes after it was asked. This is the gap the
       // pipeline never closed — it said "Sent to Claude" and stopped there.

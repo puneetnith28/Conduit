@@ -16,7 +16,7 @@
  */
 import { randomUUID } from 'crypto';
 import * as storage from './storage.js';
-import { isYesNoPrompt } from './gatePatterns.js';
+import { isYesNoPrompt, isTrustPrompt } from './gatePatterns.js';
 import type { DaemonClient } from './daemon/client.js';
 
 export type GateDecision = 'approve' | 'reject' | 'custom';
@@ -53,12 +53,29 @@ export function resolveGate(
   storage.updateAgent(projectId, agentId, { pendingGate: undefined });
 
   const yesNo = gate.source === 'regex' && isYesNoPrompt(gate.prompt);
+  // The trust prompt is a two-line arrow menu, not a y/n question, and the
+  // highlighted row is "No, exit" — so Down-then-Enter is the only thing that
+  // means yes here. Enter on its own would quit the agent.
+  const trust = gate.source === 'regex' && isTrustPrompt(gate.prompt);
   let action = 'none';
   try {
     if (decision === 'approve') {
-      if (yesNo) { daemon.writeTerminal(agent.id, 'y\r'); action = 'sent y'; }
+      if (trust) {
+        daemon.writeTerminal(agent.id, '\u001b[B');
+        // The gap matters. At 120ms the Enter overtook the redraw often
+        // enough to land on "No, exit" and quit the agent outright — the
+        // worst possible outcome for a button labelled Approve. 600ms is
+        // far longer than the TUI needs and costs nothing: a human has
+        // already clicked, and this runs after their click.
+        setTimeout(() => { try { daemon.writeTerminal(agent.id, '\r'); } catch { /* gone */ } }, 600);
+        action = 'trusted the workspace';
+      } else if (yesNo) { daemon.writeTerminal(agent.id, 'y\r'); action = 'sent y'; }
     } else if (decision === 'reject') {
-      if (yesNo) { daemon.writeTerminal(agent.id, 'n\r'); action = 'sent n'; }
+      if (trust) {
+        // Escape cancels the prompt, which is what "no" means here.
+        daemon.writeTerminal(agent.id, '\u001b');
+        action = 'declined the workspace';
+      } else if (yesNo) { daemon.writeTerminal(agent.id, 'n\r'); action = 'sent n'; }
       else {
         daemon.command({ op: 'terminal:interrupt', agentId: agent.id });
         setTimeout(() => {
