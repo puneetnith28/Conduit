@@ -87,6 +87,21 @@ for (const [name, cli, role] of [
 }
 await api('POST', `/projects/${projectId}/wiki/initialize`).catch(() => {});
 
+// Hold the routine approvals for a human, for the length of this run.
+//
+// Conduit answers y/n prompts itself now, and aider asks about the git repo
+// within a few seconds of starting — so the one gate this fixture reliably
+// produces was being raised, auto-approved and forgotten long before the gate
+// screenshot was taken. Off before the agents boot, restored at the end, in a
+// finally so an early exit cannot leave the user's own setting flipped.
+const priorGateSettings = (await api('GET', '/gate-settings')).json;
+await api('PUT', '/gate-settings', { autoApproveRoutine: false });
+const restoreGateSettings = async () => {
+  await api('PUT', '/gate-settings', {
+    autoApproveRoutine: priorGateSettings?.autoApproveRoutine !== false,
+  }).catch(() => { /* the server may already be gone */ });
+};
+
 // Start whichever agents this machine can actually run. An empty terminal is
 // a photograph of nothing, and the point of these images is the real thing.
 const seeded = (await api('GET', `/projects/${projectId}/agents`)).json || [];
@@ -246,12 +261,25 @@ async function shot(name, caption) {
     width: WIDTH, height: HEIGHT, deviceScaleFactor: 2, mobile: false,
   });
   await sleep(400);
-  const r = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  // JPEG, not PNG.
+  //
+  // PNG is lossless and therefore hopeless at photographs, and the landing
+  // page has a full-bleed photographic background: the same shot is 3.4MB as a
+  // PNG and about a tenth of that as a JPEG at quality 86, with no difference
+  // anyone can see in a README. The whole set went from 2.7MB to 9MB the first
+  // time it was regenerated against the new landing design, which is a lot of
+  // repository to spend on eight pictures.
+  //
+  // Quality 86 at deviceScaleFactor 2 keeps small UI text crisp; below about
+  // 80 the 10px labels start to fringe.
+  const r = await send('Page.captureScreenshot', {
+    format: 'jpeg', quality: 86, captureBeyondViewport: false,
+  });
   if (!r?.result?.data) { console.log(`  ✗ ${name} — no image returned`); return false; }
-  const file = path.join(OUT, `${name}.png`);
+  const file = path.join(OUT, `${name}.jpg`);
   fs.writeFileSync(file, Buffer.from(r.result.data, 'base64'));
   const kb = Math.round(fs.statSync(file).size / 1024);
-  console.log(`  ✓ ${name}.png  ${String(kb).padStart(4)} KB  — ${caption}`);
+  console.log(`  ✓ ${name}.jpg  ${String(kb).padStart(4)} KB  — ${caption}`);
   return true;
 }
 
@@ -276,11 +304,18 @@ try {
   if (!(await openFixtureProject())) {
     console.log('  ! could not select the fixture project — shots may show another one');
   }
-  // An approval gate, if one fires on its own — aider asks before it edits, so
-  // this is the real modal over the real terminals rather than a mock.
-  if (await waitForGate(15000)) {
+  // An approval gate — the real modal over the real terminals, not a mock.
+  //
+  // Routine y/n prompts are answered by Conduit itself now, so aider's "no git
+  // repo, create one?" never reaches a human and this shot silently stopped
+  // being taken. Turn auto-approval off for the length of the shot and put it
+  // back afterwards: the gate is still a real one an agent actually raised,
+  // it is just being shown to a person instead of answered.
+  if (await waitForGate(25000)) {
     await sleep(900);
-    if (await shot('gate', 'an agent is paused until you decide — and approve is never reachable by voice')) shots++;
+    if (await shot('gate', 'an agent is paused until you decide')) shots++;
+  } else {
+    console.log('  ! no agent raised a gate in 25s — keeping the previous gate shot');
   }
   await clearGates();
   if (await shot('console', 'agent panes, status strip and the Keeper bar')) shots++;
@@ -330,6 +365,7 @@ try {
   await sleep(1500);
   if (await shot('downloads', 'only builds that exist on disk, with their real sizes')) shots++;
 } finally {
+  await restoreGateSettings();
   cdp.close();
   child.kill();
   try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* ignore */ }

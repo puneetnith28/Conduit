@@ -30,13 +30,13 @@ actually renders, and none of them are mock-ups. The approval gate below was rai
 
 | | |
 |---|---|
-| ![Console](docs/screenshots/console.png) | ![Approval gate](docs/screenshots/gate.png) |
+| ![Console](docs/screenshots/console.jpg) | ![Approval gate](docs/screenshots/gate.jpg) |
 | **The console.** Three agents in real terminals you can type into, a status dot per agent derived from its own output, and the Keeper bar across the top. | **An approval gate.** The agent is stopped where it stands until you decide. Reject sends it Escape; a third option lets you answer the prompt in your own words. |
-| ![Group chat](docs/screenshots/groupchat.png) | ![Wiki](docs/screenshots/wiki.png) |
+| ![Group chat](docs/screenshots/groupchat.jpg) | ![Wiki](docs/screenshots/wiki.jpg) |
 | **Group chat.** One stream per project. Your messages go to every running agent, `@name` picks one, and the Supervisor's summaries land in the same place, labelled by what kind of thing happened. | **The wiki.** Long-term project memory the agents write to and read back, so a new agent starts knowing what the last one decided. |
-| ![Activity](docs/screenshots/activity.png) | ![Voice settings](docs/screenshots/settings.png) |
+| ![Activity](docs/screenshots/activity.jpg) | ![Voice settings](docs/screenshots/settings.jpg) |
 | **Activity.** Every file change and lifecycle event in order, filterable, so "what happened while I was away" is one screen rather than five scrollbacks. | **Voice.** Speech-to-text through the browser, Groq Whisper, OpenAI or Gemini. Keys live in `~/.conduit/api-keys.json` and are never committed. |
-| ![Landing](docs/screenshots/landing.png) | ![Downloads](docs/screenshots/downloads.png) |
+| ![Landing](docs/screenshots/landing.jpg) | ![Downloads](docs/screenshots/downloads.jpg) |
 | **The front page**, served from the same origin as the app. | **Downloads.** Only builds that exist on this server, with the sizes they actually are on disk — a platform with no build says so instead of offering a dead link. |
 
 Regenerate them yourself:
