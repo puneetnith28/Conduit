@@ -935,6 +935,36 @@ textarea {
   display: grid;
 }
 
+/* Deleting a project was reachable from nowhere in the UI — the handler
+   existed, nothing called it. Same affordance as the agent delete beside it:
+   hidden until the row is hovered or focused, so a destructive control is not
+   sitting under the cursor of someone trying to switch projects. */
+.sb-project-delete {
+  width: 18px;
+  height: 18px;
+  display: none;
+  place-items: center;
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.12s ease;
+  padding: 0;
+  margin-left: 2px;
+  flex-shrink: 0;
+}
+
+.sb-project-delete:hover {
+  color: var(--err);
+  background: var(--err-soft);
+}
+
+.sb-project:hover .sb-project-delete,
+.sb-project-delete:focus-visible {
+  display: grid;
+}
+
 .sb-agent:hover .num {
   display: none;
 }

@@ -15,6 +15,7 @@ interface Props {
   onNewProject: () => void;
   onNewAgent: () => void;
   onDeleteAgent: (agent: Agent) => void;
+  onDeleteProject: (project: Project) => void;
   onStartAll: (projectId: string) => void;
   onStopAll: (projectId: string) => void;
   onExpandProject: (projectId: string) => void;
@@ -69,7 +70,7 @@ function UsageTitle({ icon, label }: { icon: string; label: string }) {
 export default function Sidebar({
   projects, agents, selectedProjectId, selectedAgentId,
   onSelectProject, onSelectAgent, onNewProject, onNewAgent,
-  onDeleteAgent, onExpandProject,
+  onDeleteAgent, onDeleteProject, onExpandProject,
   mobileOpen, onMobileClose,
 }: Props) {
   const [usageData, setUsageData] = useState<{
@@ -148,6 +149,24 @@ export default function Sidebar({
                   {aliveCount > 0
                     ? <span className="running-chip">{aliveCount}/{list.length}</span>
                     : <span className="total-chip">{list.length}</span>}
+                  {/* A span, not a button: this row is itself a <button> and
+                      nesting one inside another is invalid and unclickable in
+                      some browsers. Same shape as the agent delete above. */}
+                  <span
+                    className="sb-project-delete"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Delete project ${p.name}`}
+                    title="Delete project"
+                    onClick={(e) => { e.stopPropagation(); onDeleteProject(p); }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault(); e.stopPropagation(); onDeleteProject(p);
+                      }
+                    }}
+                  >
+                    <Ic.x size={11} />
+                  </span>
                 </div>
               </button>
             );

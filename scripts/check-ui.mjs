@@ -188,10 +188,17 @@ try {
   await waitFor(`document.querySelector('#root')?.firstElementChild`);
   await evalJs(`localStorage.setItem('conduit-onboarding-completed','1');
                 localStorage.setItem('conduit-onboarding-skipped','1'); return true;`);
+  // about:blank first, deliberately. Going straight from `/` to `/#console` is
+  // a same-document navigation — the hash listener swaps the view immediately,
+  // and the Page.reload that follows sometimes came back on `/` with an empty
+  // hash, landing the whole pass on the marketing page with an empty sidebar.
+  // Measured, when it went wrong: {"hash":"","onLanding":true,"sidebarProjects":[]}.
+  // A hop through about:blank makes it a real cross-document load every time.
+  await send('Page.navigate', { url: 'about:blank' });
+  await sleep(250);
   await send('Page.navigate', { url: BASE + '/#console' });
-  await sleep(400);
-  await send('Page.reload');
   await waitFor(`document.querySelector('#root')?.firstElementChild`);
+  await waitFor(`document.querySelector('.gr-tabs')`);
 
   t(await evalJs(`return !!document.querySelector('#root')?.firstElementChild;`),
     'the app mounts');
@@ -217,7 +224,7 @@ try {
       onLanding: !!document.querySelector('.landing-nav'),
       tourOverlay: !!document.querySelector('.tour-overlay-root')?.firstElementChild,
       sidebarProjects: [...document.querySelectorAll('.sb-project')]
-        .map(e => e.textContent.trim().split('\n')[0]).slice(0, 8),
+        .map(e => e.textContent.trim().split('\\n')[0]).slice(0, 8),
     });`);
     t(false, 'the fixture project opens from the sidebar', `looking for "${name}" — saw ${seen}`);
     throw new Error('no project');
@@ -402,6 +409,59 @@ try {
   await waitFor(`document.querySelector('.gr-tabs')`);
   const fwd = JSON.parse((await view()) || '{}');
   t(fwd.console === true, 'and Forward returns to the console', JSON.stringify(fwd));
+
+  // ── deleting a project, through the UI ────────────────────────────────
+  //
+  // Not covered by the button sweep above, which deliberately skips anything
+  // destructive. It needs its own check because the handler for this existed in
+  // App.tsx for a long time with nothing calling it: no button, no menu, no
+  // palette entry. The feature was written, wired to nothing, and the only way
+  // to remove a project was the REST API — exactly the kind of gap a test that
+  // only clicks what it can see will never find.
+  {
+    const throwaway = 'uicheck-del-' + Date.now().toString(36);
+    const made = await api('POST', '/projects', {
+      name: throwaway, cwd: path.join(os.tmpdir(), throwaway),
+    });
+    if (made.status === 201) {
+      await waitFor(`[...document.querySelectorAll('.sb-project')]
+        .some(e => e.textContent.includes(${JSON.stringify(throwaway)}))`);
+
+      const control = await evalJs(`
+        const row = [...document.querySelectorAll('.sb-project')]
+          .find(e => e.textContent.includes(${JSON.stringify(throwaway)}));
+        if (!row) return '';
+        const del = row.querySelector('.sb-project-delete');
+        return del ? (del.getAttribute('aria-label') || 'unlabelled') : '';`);
+      t(!!control, 'every project row has a delete control', 'none found on the row');
+      t(/delete project/i.test(control || ''),
+        'and it says what it deletes, for a screen reader', control);
+
+      // Both confirms answered, the way a person clicking through would.
+      await evalJs(`window.confirm = () => true; return true;`);
+      await evalJs(`
+        const row = [...document.querySelectorAll('.sb-project')]
+          .find(e => e.textContent.includes(${JSON.stringify(throwaway)}));
+        row?.querySelector('.sb-project-delete')?.click(); return true;`);
+
+      await waitFor(`![...document.querySelectorAll('.sb-project')]
+        .some(e => e.textContent.includes(${JSON.stringify(throwaway)}))`);
+      const gone = await evalJs(`
+        return ![...document.querySelectorAll('.sb-project')]
+          .some(e => e.textContent.includes(${JSON.stringify(throwaway)}));`);
+      t(gone, 'clicking it removes the project from the sidebar');
+
+      const onServer = ((await api('GET', '/projects')).json || [])
+        .some((p) => p.id === made.json.id);
+      t(!onServer, 'and the project is gone from the server, not just the view');
+
+      // Whatever happened above, do not leave it behind.
+      if (onServer) await api('DELETE', `/projects/${made.json.id}?removeData=true`).catch(() => {});
+    } else {
+      t(false, 'could not create a project to delete', String(made.status));
+    }
+  }
+
 
 } catch (err) {
   t(false, 'the browser pass completed', String(err).slice(0, 160));

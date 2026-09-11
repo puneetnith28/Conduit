@@ -30,12 +30,17 @@ interface Props {
   onStartAll?: () => void;
   onStopAll?: () => void;
   onStartTour?: () => void;
+  /** Absent when no project is open — there is then nothing to delete. */
+  onDeleteProject?: () => void;
+  /** Shown in the command's label, so it is obvious what is about to go. */
+  currentProjectName?: string;
 }
 
 export default function CommandPalette({
   open, onClose, agents,
   onSelectAgent, onLayout,
   onNewProject, onNewAgent, onStartAll, onStopAll, onStartTour,
+  onDeleteProject, currentProjectName,
 }: Props) {
   const [q, setQ] = useState('');
   const [focus, setFocus] = useState(0);
@@ -75,6 +80,18 @@ export default function CommandPalette({
     { group: 'Project', icon: <Ic.plus size={13} />, label: 'New project…', run: () => { onNewProject(); onClose(); } },
     { group: 'Project', icon: <Ic.plus size={13} />, label: 'New agent…', run: () => { onNewAgent(); onClose(); } },
   ];
+  // The sidebar's delete control only appears on hover, which is fine as an
+  // affordance and useless as a way to find out the feature exists. This is
+  // where people look for a thing they cannot see.
+  if (onDeleteProject) {
+    commands.push({
+      group: 'Project',
+      icon: <Ic.x size={12} />,
+      label: currentProjectName ? `Delete project "${currentProjectName}"…` : 'Delete project…',
+      sub: 'Stops its agents first, and asks before removing any files',
+      run: () => { onClose(); onDeleteProject(); },
+    });
+  }
   if (onStartAll) commands.push({ group: 'Action', icon: <Ic.play size={11} />, label: 'Start all agents', run: () => { onStartAll(); onClose(); } });
   if (onStopAll) commands.push({ group: 'Action', icon: <Ic.stop size={10} />, label: 'Stop all agents', run: () => { onStopAll(); onClose(); } });
   if (onStartTour) commands.push({ group: 'Help & Tour', icon: <Ic.bolt size={12} />, label: 'Product Tour (2-Phase Onboarding)', sub: 'Guided interactive tour', run: () => { onStartTour(); onClose(); } });

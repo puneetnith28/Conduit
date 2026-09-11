@@ -579,19 +579,34 @@ export default function App() {
     if (decision === 'approve' && !r.delivered) setToast(r.note || 'The target agent is not running — nothing was sent.');
   };
 
-  const handleDeleteProject = async () => {
-    if (!selectedProjectId) return;
-    const project = projects.find((p) => p.id === selectedProjectId);
-    if (!confirm(`Delete project "${project?.name}"? Running agents will be stopped.`)) return;
-    const removeData = confirm('Also remove shared content and wiki data?');
+  /**
+   * Delete a project.
+   *
+   * This existed and was reachable from nowhere — no button, no menu item, no
+   * palette command — so the only way to remove a project was the REST API.
+   * It now takes the project to delete rather than assuming the selected one,
+   * because the sidebar deletes the row you are pointing at, which is not
+   * always the one that is open.
+   */
+  const handleDeleteProject = async (target?: Project) => {
+    const project = target || projects.find((p) => p.id === selectedProjectId);
+    if (!project) return;
+    if (!confirm(`Delete project "${project.name}"? Running agents will be stopped.`)) return;
+    const removeData = confirm(
+      `Also remove "${project.name}" shared content and wiki data?\n\n`
+      + 'OK removes them permanently. Cancel keeps the files and deletes only the project.',
+    );
     try {
-      await api.deleteProject(selectedProjectId, removeData);
+      await api.deleteProject(project.id, removeData);
     } catch (err) {
       showError(err);
       return;
     }
-    setSelectedProjectId(null);
-    setSelectedAgentId(null);
+    // Only clear the selection if it was the project we just removed.
+    if (project.id === selectedProjectId) {
+      setSelectedProjectId(null);
+      setSelectedAgentId(null);
+    }
     await loadProjects();
   };
 
@@ -1180,6 +1195,7 @@ export default function App() {
         onNewProject={() => setShowNewProject(true)}
         onNewAgent={() => setShowNewAgent(true)}
         onDeleteAgent={handleDeleteAgent}
+        onDeleteProject={handleDeleteProject}
         onStartAll={handleStartAll}
         onStopAll={handleStopAll}
         onExpandProject={loadAgents}
@@ -1478,6 +1494,8 @@ export default function App() {
         onNewAgent={() => setShowNewAgent(true)}
         onStartAll={selectedProjectId ? () => handleStartAll() : undefined}
         onStopAll={selectedProjectId ? () => handleStopAll() : undefined}
+        onDeleteProject={selectedProjectId ? () => handleDeleteProject() : undefined}
+        currentProjectName={projects.find((p) => p.id === selectedProjectId)?.name}
         onStartTour={handleStartTour}
       />
 
