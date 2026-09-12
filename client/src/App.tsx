@@ -26,8 +26,6 @@ import SettingsModal from './components/SettingsModal';
 import LandingPage from './components/LandingPage';
 import ConduitOnboardingTour from './components/onboarding/ConduitOnboardingTour';
 import DownloadModal from './components/DownloadModal';
-import logoDark from './assets/logo_dark_sm.jpg';
-import logoLight from './assets/logo_light_sm.jpg';
 import * as api from './api';
 import { speak, stopSpeaking } from './utils/speech';
 import type { Route, RosterAgent } from './utils/voiceRouting';
@@ -878,7 +876,7 @@ export default function App() {
     if (brainWorking) stopSpeaking();
   }, [brainWorking]);
 
-  const logoImg = logoDark;
+  const logoImg = '/conduit1.png';
 
   const [tourForceStart, setTourForceStart] = useState(false);
   const [isDownloadOpen, setIsDownloadOpen] = useState(false);

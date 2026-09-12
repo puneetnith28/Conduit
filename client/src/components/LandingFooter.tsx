@@ -20,7 +20,7 @@ export default function LandingFooter({ onOpenConsole, onOpenDownload }: Landing
             title="Back to top"
           >
             <span className="footer-logo-icon">
-              <Ic.logo size={14} />
+              <Ic.logo size={16} />
             </span>
             <span className="footer-brand-title">CONDUIT</span>
           </div>

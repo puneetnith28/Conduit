@@ -211,14 +211,29 @@ const Ic = {
       <path d="M8 12v2.4M5.6 14.4h4.8" />
     </svg>
   ),
-  // Conduit brand mark — a conduit hexagon with a >_ terminal prompt.
-  logo: (p: IconProps = {}) => (
-    <svg width={p.size || 14} height={p.size || 14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={p.strokeWidth || 1.5} strokeLinecap="round" strokeLinejoin="round" style={p.style} className={p.className}>
-      <path d="M8 1.4L13.7 4.8L13.7 11.2L8 14.6L2.3 11.2L2.3 4.8Z" />
-      <path d="M5.6 6L8 8L5.6 10" />
-      <path d="M8.6 10.2H11" />
-    </svg>
-  ),
+  // Conduit brand mark — official Conduit logo
+  logo: (p: IconProps = {}) => {
+    const s = p.size || 14;
+    return (
+      <img
+        src="/conduit1.png"
+        alt="Conduit"
+        width={s}
+        height={s}
+        className={p.className}
+        style={{
+          width: s,
+          height: s,
+          objectFit: 'contain',
+          borderRadius: Math.max(2, Math.round(s * 0.22)),
+          display: 'inline-block',
+          verticalAlign: 'middle',
+          flexShrink: 0,
+          ...p.style,
+        }}
+      />
+    );
+  },
   menu: (p: IconProps = {}) => (
     <svg width={p.size || 14} height={p.size || 14} viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" style={p.style}>
       <path d="M3 5h12M3 9h12M3 13h12" />

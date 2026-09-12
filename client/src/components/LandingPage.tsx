@@ -74,7 +74,7 @@ export default function LandingPage({ onOpenConsole, onStartTour }: LandingPageP
             title="Conduit Home"
           >
             <span className="brand-logo-icon">
-              <Ic.logo size={15} />
+              <Ic.logo size={18} />
             </span>
             <span className="brand-title">CONDUIT</span>
           </div>

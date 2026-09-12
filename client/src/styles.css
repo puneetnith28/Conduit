@@ -7310,7 +7310,8 @@ body.is-resizing .pane-resizer {
 .brand-logo-icon {
   display: flex;
   align-items: center;
-  color: #7c3aed;
+  border-radius: 4px;
+  overflow: hidden;
 }
 
 .landing-nav-brand .brand-title {
@@ -11988,7 +11989,7 @@ body.is-resizing .pane-resizer {
   height: 22px;
   border-radius: 6px;
   background: #0f0f11;
-  color: #ffffff;
+  overflow: hidden;
 }
 
 .footer-brand-title {
