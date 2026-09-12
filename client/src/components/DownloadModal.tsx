@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import Ic from './Icons';
-import { detectUserOS, type DetectedPlatform } from '../utils/detectOS';
 
 interface DownloadFormat {
   label: string;
@@ -94,12 +93,6 @@ interface DownloadModalProps {
 }
 
 export default function DownloadModal({ isOpen, onClose }: DownloadModalProps) {
-  const [detected, setDetected] = useState<DetectedPlatform | null>(null);
-
-  useEffect(() => {
-    setDetected(detectUserOS());
-  }, []);
-
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) onClose();
@@ -128,8 +121,6 @@ export default function DownloadModal({ isOpen, onClose }: DownloadModalProps) {
     document.body.removeChild(link);
   };
 
-  const isWinUser = detected?.family === 'win' || !detected?.family;
-
   const modalContent = (
     <div className="download-modal-overlay" onClick={onClose}>
       <div className="download-modal-container" data-tour="download-modal" onClick={(e) => e.stopPropagation()}>
@@ -150,21 +141,10 @@ export default function DownloadModal({ isOpen, onClose }: DownloadModalProps) {
             <button
               className="primary-download-btn"
               onClick={() => handleDownload('Conduit.exe')}
-              title="Download Conduit.exe for Windows"
+              title="Download Conduit for Windows"
             >
-              <span className="download-btn-icon">
-                <Ic.download size={20} />
-              </span>
-              <div className="download-btn-content">
-                <span className="download-main-text">
-                  {isWinUser ? 'Download for Windows (x64)' : 'Download Windows App (x64)'}
-                </span>
-                <span className="download-sub-text">
-                  {isWinUser
-                    ? 'v1.0.0 · Standalone Executable (.exe) · 234 MB · Free & Open Source'
-                    : 'macOS & Linux in development · Conduit.exe (234 MB)'}
-                </span>
-              </div>
+              <Ic.download size={18} />
+              <span>Download for Windows</span>
             </button>
           </div>
         </div>
