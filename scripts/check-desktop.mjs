@@ -182,11 +182,27 @@ try {
         cdp.send(JSON.stringify({ id: n, method, params }));
       });
       await send('Runtime.enable');
-      const r = await send('Runtime.evaluate', {
-        expression: `JSON.stringify({ mounted: !!document.querySelector('#root')?.firstElementChild, title: document.title })`,
-        returnByValue: true,
-      });
-      const info = JSON.parse(r?.result?.result?.value || '{}');
+
+      // Wait for the first paint rather than sampling once.
+      //
+      // A first launch is slow in a way a rebuild never is: cold files, no
+      // disk cache, Electron unpacking itself. Running the audit against a
+      // freshly extracted zip — which is exactly what a user does — reported
+      // `{mounted:false, title:""}` while the backend was already up and
+      // serving agents. The same build passed on the next run, warm. The
+      // window was not broken, it was still arriving.
+      const readInfo = async () => {
+        const r = await send('Runtime.evaluate', {
+          expression: `JSON.stringify({ mounted: !!document.querySelector('#root')?.firstElementChild, title: document.title })`,
+          returnByValue: true,
+        });
+        return JSON.parse(r?.result?.result?.value || '{}');
+      };
+      let info = await readInfo();
+      for (let i = 0; i < 40 && info.mounted !== true; i++) {
+        await sleep(500);
+        info = await readInfo();
+      }
       t(info.mounted === true, 'the React app mounted inside the Electron window',
         JSON.stringify(info));
       t(info.title === 'Conduit', 'the window is showing Conduit', info.title);
