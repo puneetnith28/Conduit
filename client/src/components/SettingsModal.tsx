@@ -12,11 +12,25 @@ interface ProviderSpec {
   voices?: VoiceOption[];
 }
 
-/** Nova Sonic's own voices — see src/voice/config.ts for where this list comes from. */
+/**
+ * Nova Sonic's own voices, each one accepted by the live service.
+ *
+ * Only the first three have published descriptions; the rest are Nova's
+ * multilingual set, named rather than described because guessing at an accent
+ * in a dropdown is worse than letting someone press play and hear it.
+ */
 const NOVA_VOICES: { id: string; label: string }[] = [
   { id: 'matthew', label: 'Matthew — male, American' },
   { id: 'tiffany', label: 'Tiffany — female, American' },
   { id: 'amy', label: 'Amy — female, British' },
+  { id: 'ambre', label: 'Ambre' },
+  { id: 'florian', label: 'Florian' },
+  { id: 'beatrice', label: 'Beatrice' },
+  { id: 'lorenzo', label: 'Lorenzo' },
+  { id: 'greta', label: 'Greta' },
+  { id: 'lennart', label: 'Lennart' },
+  { id: 'carlos', label: 'Carlos' },
+  { id: 'lupe', label: 'Lupe' },
 ];
 
 interface VoiceConfig {

@@ -66,12 +66,23 @@ export interface VoiceConfig {
 /**
  * The voices Nova Sonic accepts.
  *
- * From Amazon's documentation for `amazon.nova-2-sonic-v1:0`. Not verified
- * against the service here — that needs Bedrock credentials, and this machine
- * has none at the moment — so an unknown value is passed through rather than
- * rejected, and Nova gets the final say.
+ * Asked the service rather than the documentation: each of these was offered
+ * to `amazon.nova-2-sonic-v1:0` in a real session and accepted at promptStart.
+ * The check is meaningful because a wrong one is refused outright —
+ * `giovanna` came back "Received invalid id".
+ *
+ * Only the first three have published descriptions. The rest are Nova's
+ * multilingual set and are listed by name alone rather than guessing at
+ * accents nobody here has heard.
+ *
+ * An unrecognised value is still passed through: this list can go stale, and
+ * Nova is the authority on what it will speak with.
  */
-export const NOVA_VOICES = ['matthew', 'tiffany', 'amy'] as const;
+export const NOVA_VOICES = [
+  'matthew', 'tiffany', 'amy',
+  'ambre', 'florian', 'beatrice', 'lorenzo',
+  'greta', 'lennart', 'carlos', 'lupe',
+] as const;
 
 const DEFAULT: VoiceConfig = {
   engine: 'pipeline',
