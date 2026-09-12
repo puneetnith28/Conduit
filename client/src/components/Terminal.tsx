@@ -48,16 +48,34 @@ const LIGHT_THEME = {
   blue: '#2383e2',
   magenta: '#8700af',
   cyan: '#0e7a7a',
-  white: '#e0ddd8',
-  brightBlack: '#8b8680',
+  white: '#000000',
+  brightBlack: '#333333',
   brightRed: '#d77b53',
   brightGreen: '#4dab9a',
   brightYellow: '#c49a1a',
   brightBlue: '#529cca',
   brightMagenta: '#b44dd7',
   brightCyan: '#3aafa9',
-  brightWhite: '#f7f7f5',
+  brightWhite: '#000000',
 };
+
+/**
+ * Which palette should the terminal paint with?
+ *
+ * Light unless something has explicitly asked for dark — the same rule
+ * styles.css follows, where the light palette sits on bare `:root` and only
+ * `[data-theme="dark"]` overrides it.
+ *
+ * This used to ask the opposite question: dark unless `data-theme` was
+ * exactly "light". Nothing in the app ever sets that attribute, so the answer
+ * was always dark — and the terminal painted #f4f4f5 text onto
+ * `.terminal-container`, which is transparent and therefore shows the white
+ * pane behind it. Near-white on white: the output was there, correct, and
+ * completely unreadable.
+ */
+function wantsDark(): boolean {
+  return document.documentElement.getAttribute('data-theme') === 'dark';
+}
 
 export default function Terminal({ agentId, ws, onFocus, focused }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -78,8 +96,7 @@ export default function Terminal({ agentId, ws, onFocus, focused }: Props) {
     const apply = () => {
       const t = termRef.current;
       if (!t) return;
-      const isLightNow = el.getAttribute('data-theme') === 'light';
-      t.options.theme = isLightNow ? LIGHT_THEME : DARK_THEME;
+      t.options.theme = wantsDark() ? DARK_THEME : LIGHT_THEME;
     };
     const obs = new MutationObserver(apply);
     obs.observe(el, { attributes: true, attributeFilter: ['data-theme'] });
@@ -90,14 +107,13 @@ export default function Terminal({ agentId, ws, onFocus, focused }: Props) {
     const container = containerRef.current;
     if (!container) return;
 
-    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
     const isMobile = typeof window !== 'undefined' && window.innerWidth <= 640;
     const term = new XTerminal({
       cursorBlink: true,
       fontSize: isMobile ? 12.5 : 12.25,
       lineHeight: 1.22,
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-      theme: isLight ? LIGHT_THEME : DARK_THEME,
+      theme: wantsDark() ? DARK_THEME : LIGHT_THEME,
       scrollback: 5000,
       allowProposedApi: true,
     });
