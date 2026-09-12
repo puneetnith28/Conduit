@@ -50,6 +50,11 @@ npm run screenshots     # in another
 
 ## Run it
 
+> **Evaluating this, or judging it?** [`TESTING.md`](TESTING.md) is written for you: three
+> levels from "watch it work in a browser with nothing installed" to a full Docker setup,
+> plus what to look at first and the limits stated up front.
+
+
 Needs **Node 20+** and at least one agent CLI installed and logged in.
 
 ```bash

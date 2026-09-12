@@ -8,7 +8,11 @@ services:
       # REQUIRED when the port is reachable from other machines.
       - CONDUIT_AUTH=${CONDUIT_AUTH:?set CONDUIT_AUTH=user:password in your shell or a .env file}
       - AWS_REGION=${AWS_REGION:-us-east-1}
-      - BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID:-anthropic.claude-3-5-sonnet-20240620-v1:0}
+      # An inference profile (us. prefix), not a bare model id. Bedrock retired
+      # every bare anthropic.* id; the old default here answered "this model version
+      # has reached the end of its life" on every call. Must match the IAM policy
+      # in docs/bedrock-iam-policy.json.
+      - BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID:-us.anthropic.claude-sonnet-4-5-20250929-v1:0}
       # Leave empty on EC2 with an instance role; set locally if you have keys.
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}

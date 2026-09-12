@@ -45,7 +45,8 @@
     "check:org": "node scripts/check-org.mjs",
     "check:layout": "node scripts/check-layout.mjs",
     "check:lifecycle": "node scripts/check-lifecycle.mjs",
-    "check:bedrock": "node scripts/check-bedrock.mjs"
+    "check:bedrock": "node scripts/check-bedrock.mjs",
+    "seed:demo": "node scripts/seed-demo.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.109.1",
