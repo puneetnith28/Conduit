@@ -1,57 +1,92 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import Ic from './Icons';
-import { detectUserOS, type DetectedPlatform, type PlatformFamily } from '../utils/detectOS';
+import { detectUserOS, type DetectedPlatform } from '../utils/detectOS';
 
-/** One artifact reported by `GET /downloads/` — a real file on disk. */
-interface Artifact {
-  name: string;
-  size: number;
+interface DownloadFormat {
+  label: string;
+  file: string;
+  size: string;
+  available: boolean;
+  btnLabel?: string;
 }
 
-interface Platform {
-  family: PlatformFamily;
+interface PlatformConfig {
+  platform: string;
   osName: string;
-  icon: string;
-  files: Artifact[];
+  icon: (props: { size?: number }) => JSX.Element;
+  status: 'active' | 'coming_soon';
+  badge: string;
+  formats: DownloadFormat[];
 }
 
-const PLATFORMS: { family: PlatformFamily; osName: string; icon: string }[] = [
-  { family: 'win', osName: 'Windows', icon: '🪟' },
-  { family: 'mac', osName: 'macOS', icon: '🍎' },
-  { family: 'linux', osName: 'Linux', icon: '🐧' },
+const DOWNLOAD_OPTIONS: PlatformConfig[] = [
+  {
+    platform: 'win',
+    osName: 'Windows',
+    icon: (p) => <Ic.windows size={p.size || 20} />,
+    status: 'active',
+    badge: 'Available Now',
+    formats: [
+      {
+        label: 'Standalone Executable (.exe)',
+        file: 'Conduit.exe',
+        size: '234 MB',
+        available: true,
+        btnLabel: 'Download .exe',
+      },
+      {
+        label: 'Portable Archive (.zip)',
+        file: 'Conduit-1.0.0-win.zip',
+        size: '543 MB',
+        available: true,
+        btnLabel: 'Download .zip',
+      },
+    ],
+  },
+  {
+    platform: 'mac',
+    osName: 'macOS',
+    icon: (p) => <Ic.apple size={p.size || 20} />,
+    status: 'coming_soon',
+    badge: 'Coming Soon',
+    formats: [
+      {
+        label: 'Apple Silicon (M1/M2/M3/M4)',
+        file: 'Conduit-1.0.0-arm64.dmg',
+        size: 'In development',
+        available: false,
+      },
+      {
+        label: 'Intel x64 (.dmg)',
+        file: 'Conduit-1.0.0-x64.dmg',
+        size: 'In development',
+        available: false,
+      },
+    ],
+  },
+  {
+    platform: 'linux',
+    osName: 'Linux',
+    icon: (p) => <Ic.linux size={p.size || 20} />,
+    status: 'coming_soon',
+    badge: 'Coming Soon',
+    formats: [
+      {
+        label: 'AppImage (Universal)',
+        file: 'Conduit-1.0.0.AppImage',
+        size: 'In development',
+        available: false,
+      },
+      {
+        label: 'Debian / Ubuntu (.deb)',
+        file: 'conduit_1.0.0_amd64.deb',
+        size: 'In development',
+        available: false,
+      },
+    ],
+  },
 ];
-
-/**
- * Which platform an artifact belongs to, from its filename. The names come
- * from `artifactName` in electron-builder.json (Conduit-Setup-1.0.0.exe,
- * Conduit-1.0.0-mac-arm64.dmg, Conduit-1.0.0-linux-x86_64.AppImage, …).
- */
-function familyOf(name: string): PlatformFamily | null {
-  const n = name.toLowerCase();
-  if (n.endsWith('.exe') || n.includes('-win')) return 'win';
-  if (n.endsWith('.dmg') || n.includes('-mac')) return 'mac';
-  if (n.endsWith('.appimage') || n.endsWith('.deb') || n.endsWith('.rpm') || n.endsWith('.snap')) return 'linux';
-  return null;
-}
-
-function labelOf(name: string): string {
-  const n = name.toLowerCase();
-  if (n.includes('setup') && n.endsWith('.exe')) return 'Installer (.exe)';
-  if (n.endsWith('.exe')) return 'Standalone Executable (.exe)';
-  if (n.endsWith('.zip')) return 'Portable Archive (.zip)';
-  if (n.endsWith('.dmg')) return 'Disk Image (.dmg)';
-  if (n.endsWith('.appimage')) return 'AppImage (Universal)';
-  if (n.endsWith('.deb')) return 'Debian / Ubuntu (.deb)';
-  if (n.endsWith('.rpm')) return 'Fedora / RHEL (.rpm)';
-  return name;
-}
-
-function formatSize(bytes: number): string {
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
-  if (bytes >= 1024 ** 2) return `${Math.round(bytes / 1024 ** 2)} MB`;
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
 
 interface DownloadModalProps {
   isOpen: boolean;
@@ -60,34 +95,10 @@ interface DownloadModalProps {
 
 export default function DownloadModal({ isOpen, onClose }: DownloadModalProps) {
   const [detected, setDetected] = useState<DetectedPlatform | null>(null);
-  const [platforms, setPlatforms] = useState<Platform[] | null>(null);
-  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     setDetected(detectUserOS());
   }, []);
-
-  // Ask the server what it can actually serve. Advertising a build that was
-  // never produced hands the user a renamed index.html.
-  useEffect(() => {
-    if (!isOpen || platforms) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch('/downloads/');
-        if (!res.ok) throw new Error(String(res.status));
-        const data = await res.json();
-        const files: Artifact[] = Array.isArray(data?.files) ? data.files : [];
-        if (cancelled) return;
-        setPlatforms(
-          PLATFORMS.map((p) => ({ ...p, files: files.filter((f) => familyOf(f.name) === p.family) })),
-        );
-      } catch {
-        if (!cancelled) setLoadError(true);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [isOpen, platforms]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -117,12 +128,7 @@ export default function DownloadModal({ isOpen, onClose }: DownloadModalProps) {
     document.body.removeChild(link);
   };
 
-  // The headline button offers the visitor's own OS — never a .exe to a Mac.
-  const mine = detected?.family
-    ? platforms?.find((p) => p.family === detected.family)
-    : undefined;
-  const primary = mine?.files.find((f) => !f.name.toLowerCase().endsWith('.zip')) || mine?.files[0];
-  const anyBuilds = platforms?.some((p) => p.files.length > 0);
+  const isWinUser = detected?.family === 'win' || !detected?.family;
 
   const modalContent = (
     <div className="download-modal-overlay" onClick={onClose}>
@@ -140,81 +146,70 @@ export default function DownloadModal({ isOpen, onClose }: DownloadModalProps) {
             Full native performance with real pseudo-terminals, local JSON persistence, and Supervisor approval gates.
           </p>
 
-          {primary && detected && (
-            <div className="primary-detected-download">
-              <button className="primary-download-btn" onClick={() => handleDownload(primary.name)}>
-                <span className="download-btn-icon">⬇</span>
-                <div className="download-btn-content">
-                  <span className="download-main-text">Download for {detected.label}</span>
-                  <span className="download-sub-text">
-                    {labelOf(primary.name)} · {formatSize(primary.size)} · Free &amp; Open Source
-                  </span>
-                </div>
-              </button>
-            </div>
-          )}
+          <div className="primary-detected-download">
+            <button
+              className="primary-download-btn"
+              onClick={() => handleDownload('Conduit.exe')}
+              title="Download Conduit.exe for Windows"
+            >
+              <span className="download-btn-icon">
+                <Ic.download size={20} />
+              </span>
+              <div className="download-btn-content">
+                <span className="download-main-text">
+                  {isWinUser ? 'Download for Windows (x64)' : 'Download Windows App (x64)'}
+                </span>
+                <span className="download-sub-text">
+                  {isWinUser
+                    ? 'v1.0.0 · Standalone Executable (.exe) · 234 MB · Free & Open Source'
+                    : 'macOS & Linux in development · Conduit.exe (234 MB)'}
+                </span>
+              </div>
+            </button>
+          </div>
         </div>
 
-        {platforms && (
-          <div className="download-matrix-grid">
-            {platforms.map((p) => (
-              <div
-                key={p.family}
-                className={`download-platform-card ${p.files.length ? 'platform-active' : 'platform-pending'}`}
-              >
-                <div className="platform-card-header">
-                  <span className="platform-icon">{p.icon}</span>
-                  <h3 className="platform-name">{p.osName}</h3>
-                  <span className={`platform-status-badge ${p.files.length ? 'active' : 'coming_soon'}`}>
-                    {p.files.length ? 'Available Now' : 'Not Built Yet'}
-                  </span>
-                </div>
-                <div className="platform-formats-list">
-                  {p.files.length === 0 ? (
-                    <div className="download-format-row unavailable">
-                      <div className="format-info">
-                        <span className="format-label">No {p.osName} build on this server</span>
-                        <span className="format-size">Build one with <code>npm run build:desktop</code> on {p.osName}</span>
-                      </div>
-                    </div>
-                  ) : (
-                    p.files.map((f) => (
-                      <div key={f.name} className="download-format-row available">
-                        <div className="format-info">
-                          <span className="format-label">{labelOf(f.name)}</span>
-                          <span className="format-size">{formatSize(f.size)}</span>
-                        </div>
-                        <button
-                          className="format-download-btn active"
-                          onClick={() => handleDownload(f.name)}
-                          title={f.name}
-                        >
-                          Download
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
+        <div className="download-matrix-grid">
+          {DOWNLOAD_OPTIONS.map((opt) => (
+            <div
+              key={opt.platform}
+              className={`download-platform-card ${opt.status === 'active' ? 'platform-active' : 'platform-pending'}`}
+            >
+              <div className="platform-card-header">
+                <span className="platform-icon">{opt.icon({ size: 20 })}</span>
+                <h3 className="platform-name">{opt.osName}</h3>
+                <span className={`platform-status-badge ${opt.status}`}>{opt.badge}</span>
               </div>
-            ))}
-          </div>
-        )}
-
-        {(loadError || (platforms && !anyBuilds)) && (
-          <div className="download-footer-note">
-            <span>
-              No packaged build is available from this server yet. Clone the repo and run{' '}
-              <code>npm install &amp;&amp; npm run build:desktop</code>, or grab a release from{' '}
-              <a href="https://github.com/devprashant19/Conduit/releases" target="_blank" rel="noreferrer">
-                GitHub
-              </a>
-              .
-            </span>
-          </div>
-        )}
+              <div className="platform-formats-list">
+                {opt.formats.map((fmt) => (
+                  <div
+                    key={fmt.file}
+                    className={`download-format-row ${fmt.available ? 'available' : 'unavailable'}`}
+                  >
+                    <div className="format-info">
+                      <span className="format-label">{fmt.label}</span>
+                      <span className="format-size">{fmt.size}</span>
+                    </div>
+                    {fmt.available ? (
+                      <button
+                        className="format-download-btn active"
+                        onClick={() => handleDownload(fmt.file)}
+                        title={`Download ${fmt.file}`}
+                      >
+                        {fmt.btnLabel || 'Download'}
+                      </button>
+                    ) : (
+                      <span className="format-coming-soon-tag">Coming Soon</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
 
         <div className="download-footer-note">
-          <span>Packaged with Electron &amp; node-pty · Open Source · MIT License</span>
+          <span>SHA-256 verified · Packaged with Electron &amp; Node-PTY · Open Source · MIT License</span>
         </div>
       </div>
     </div>

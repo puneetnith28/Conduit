@@ -12,6 +12,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': 'http://localhost:3200',
+      '/downloads': 'http://localhost:3200',
       '/ws': {
         target: 'ws://localhost:3200',
         ws: true,
