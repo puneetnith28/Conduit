@@ -876,7 +876,7 @@ export default function App() {
     if (brainWorking) stopSpeaking();
   }, [brainWorking]);
 
-  const logoImg = '/conduit1.png';
+  const logoImg = '/conduit1.png?t=123456';
 
   const [tourForceStart, setTourForceStart] = useState(false);
   const [isDownloadOpen, setIsDownloadOpen] = useState(false);

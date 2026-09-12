@@ -216,7 +216,7 @@ const Ic = {
     const s = p.size || 14;
     return (
       <img
-        src="/conduit1.png"
+        src="/conduit1.png?t=123456"
         alt="Conduit"
         width={s}
         height={s}
