@@ -40,6 +40,8 @@ interface WatcherState {
   /** Rolling tail of stripped text for cross-chunk prompt detection. */
   tail: string;
   timer: ReturnType<typeof setTimeout> | null;
+  /** Waits for the terminal to go quiet before a prompt counts. */
+  gateTimer: ReturnType<typeof setTimeout> | null;
   isProcessing: boolean;
   lastCallAt: number;
   lastGateReason: string;
@@ -54,6 +56,15 @@ const watchers = new Map<string, WatcherState>();
 const DEBOUNCE_MS = 10_000;          // quiet period before a batch goes to Bedrock
 const MIN_CALL_INTERVAL_MS = 20_000; // never call Bedrock more often than this per agent
 const MAX_BATCH_CHARS = 12_000;      // tail of the batch that is actually sent
+/**
+ * How long the terminal must be quiet before a prompt counts as a prompt.
+ *
+ * Long enough that a CLI mid-sentence is never mistaken for one waiting, short
+ * enough that answering still feels immediate. A CLI that has stopped to ask
+ * something stays stopped.
+ */
+const GATE_SETTLE_MS = 400;
+
 const GATE_REPEAT_MS = 60_000;       // same gate reason within this window is ignored
 
 const logPath = path.join(os.homedir(), '.conduit', 'supervisor-log.jsonl');
@@ -478,7 +489,7 @@ export function attachWatcher(agentId: string, projectId: string, broadcast: Bro
   const state: WatcherState = {
     agentId, projectId, broadcast,
     buffer: '', tail: '',
-    timer: null, isProcessing: false,
+    timer: null, gateTimer: null, isProcessing: false,
     lastCallAt: 0, lastGateReason: '', lastGateAt: 0,
     recent: [],
     teardown: () => { /* set below */ },
@@ -492,18 +503,49 @@ export function attachWatcher(agentId: string, projectId: string, broadcast: Bro
     // Rolling tail so a prompt split across chunks is still seen.
     state.tail = (state.tail + text).slice(-3000);
 
-    // Fast path: prompts + destructive commands.
-    const gate = checkGate(state.tail.slice(-800));
-    if (gate.matches) {
+    const raise = (reason: string) => {
       const now = Date.now();
-      const repeat = gate.reason === state.lastGateReason && now - state.lastGateAt < GATE_REPEAT_MS;
-      if (!repeat) {
-        state.lastGateReason = gate.reason;
-        state.lastGateAt = now;
-        const context = state.tail.slice(-600).trim();
-        triggerGate(projectId, agentId, context, 'regex', broadcast);
-      }
+      if (reason === state.lastGateReason && now - state.lastGateAt < GATE_REPEAT_MS) return;
+      state.lastGateReason = reason;
+      state.lastGateAt = now;
+      triggerGate(projectId, agentId, state.tail.slice(-600).trim(), 'regex', broadcast);
+    };
+
+    // A destructive command is a warning, and a warning is worth raising the
+    // moment it appears. Nothing types an answer to these — classifyGate keeps
+    // them harmful — so being eager costs nothing but a modal.
+    const risky = checkGate(state.tail.slice(-800));
+    if (risky.matches && risky.highRisk) {
+      raise(risky.reason);
+      return;
     }
+
+    // A *prompt* is different, because answering one means typing into the
+    // terminal — and Conduit was typing into agents that were not asking.
+    //
+    // The check ran on every chunk against the last 800 characters, so any
+    // `[y/N]` the agent merely *printed* counted: a CLI's usage text, a diff,
+    // documentation it was writing. Auto-approval then typed `y` and Enter
+    // into a prompt nobody was holding, which is where the stray letters in an
+    // idle terminal came from — and the Enter started a fresh turn, which is
+    // why the agent went back to "awaiting input" after it had already
+    // answered.
+    //
+    // Two things separate a real prompt from prose about one:
+    //
+    //   it is the last thing on screen  — the CLI stopped there to wait
+    //   nothing follows it              — a CLI waiting produces no output
+    //
+    // So wait for the stream to go quiet, then look only at the end of it.
+    if (state.gateTimer) clearTimeout(state.gateTimer);
+    state.gateTimer = setTimeout(() => {
+      state.gateTimer = null;
+      // The tail end only. A prompt buried in scrollback is something the
+      // agent wrote, not something it is waiting on.
+      const settled = state.tail.slice(-300);
+      const prompt = checkGate(settled);
+      if (prompt.matches) raise(prompt.reason);
+    }, GATE_SETTLE_MS);
 
     // Slow path: batch for the Supervisor.
     state.buffer += text;
@@ -524,6 +566,9 @@ export function detachWatcher(agentId: string) {
   const state = watchers.get(agentId);
   if (!state) return;
   if (state.timer) clearTimeout(state.timer);
+  // A pending settle timer would fire against an agent that is gone,
+  // raising a gate for a terminal nobody is looking at.
+  if (state.gateTimer) clearTimeout(state.gateTimer);
   try { state.teardown(); } catch { /* ignore */ }
   watchers.delete(agentId);
 }

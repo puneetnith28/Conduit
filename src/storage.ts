@@ -301,6 +301,93 @@ function writeFileAtomic(file: string, contents: string): void {
   }
 }
 
+/**
+ * Read, change and save one project's file without another process losing the
+ * change.
+ *
+ * project.json is written whole, and two processes do read-modify-write on it:
+ * the web server creates and renames agents, and the daemon writes pendingGate
+ * as the watcher sees prompts. Each write is atomic, so the file is never torn
+ * — but atomic is not the same as safe. If the daemon read the file a moment
+ * before an agent was created and saved its copy a moment after, the new agent
+ * was simply gone. That is the "agent vanished after being created" failure:
+ * intermittent, invisible, and impossible to reproduce on demand.
+ *
+ * A lock file makes the read and the write one step. `wx` fails if the file
+ * exists, which is the atomic test-and-set; whoever creates it owns the
+ * project until they remove it.
+ *
+ * A lock is only ever held across a read and a write of one small JSON file,
+ * so waits are in milliseconds. A lock older than the timeout is assumed to
+ * belong to a process that died holding it and is broken — losing an update is
+ * bad, wedging the app forever is worse.
+ */
+const LOCK_TIMEOUT_MS = 4000;
+const LOCK_STALE_MS = 10_000;
+
+function lockPath(projectId: string): string {
+  return path.join(projectDir(projectId), '.lock');
+}
+
+function acquireLock(projectId: string): number | null {
+  const file = lockPath(projectId);
+  const until = Date.now() + LOCK_TIMEOUT_MS;
+  for (;;) {
+    try {
+      // Deliberately no ensureDir. Creating the directory here would bring a
+      // deleted project back from the dead on the next stray write — which is
+      // the exact failure `check:lifecycle` exists to catch, and which this
+      // lock reintroduced the first time round.
+      return fs.openSync(file, 'wx');
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      // No project directory means no project. Let the caller's own read find
+      // nothing and write nothing.
+      if (code === 'ENOENT') return null;
+      if (code !== 'EEXIST') return null;
+      try {
+        // Left behind by something that died mid-write.
+        if (Date.now() - fs.statSync(file).mtimeMs > LOCK_STALE_MS) {
+          fs.unlinkSync(file);
+          continue;
+        }
+      } catch { /* it went away on its own — try again */ }
+      if (Date.now() > until) return null;
+      // Busy-wait deliberately: this is sub-millisecond work behind the lock,
+      // and Atomics.wait is the only way to sleep synchronously here.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+    }
+  }
+}
+
+function releaseLock(projectId: string, fd: number): void {
+  try { fs.closeSync(fd); } catch { /* already closed */ }
+  try { fs.unlinkSync(lockPath(projectId)); } catch { /* already gone */ }
+}
+
+/**
+ * Apply a change to a project's data under its lock.
+ *
+ * The callback is handed freshly read data — never a copy from before the
+ * wait — and whatever it returns is saved. Returning null saves nothing.
+ */
+function mutateProjectData<T>(
+  projectId: string,
+  fn: (data: ProjectData) => T | null,
+): T | null {
+  const fd = acquireLock(projectId);
+  try {
+    const data = getProjectData(projectId);
+    if (!data) return null;
+    const result = fn(data);
+    if (result === null) return null;
+    saveProjectData(data);
+    return result;
+  } finally {
+    if (fd !== null) releaseLock(projectId, fd);
+  }
+}
+
 function saveProjectData(data: ProjectData) {
   ensureDir(projectDir(data.project.id));
   writeFileAtomic(projectFile(data.project.id), JSON.stringify(data, null, 2));
@@ -443,28 +530,28 @@ export function getAgent(projectId: string, agentId: string): Agent | null {
 }
 
 export function createAgent(projectId: string, name: string, cli: Agent['cli'], cwd: string, role?: string, flags?: Agent['flags']): Agent | null {
-  const data = getProjectData(projectId);
-  if (!data) return null;
-  const agent: Agent = {
-    id: uuid(),
-    projectId,
-    name,
-    role,
-    cli,
-    cwd,
-    status: 'stopped',
-    flags,
-  };
-  data.agents.push(agent);
-  saveProjectData(data);
-  return agent;
+  // Under the lock: the daemon writes this same file whenever the watcher sees
+  // a prompt, and an unlocked create could be read over and lost.
+  return mutateProjectData(projectId, (data) => {
+    const agent: Agent = {
+      id: uuid(),
+      projectId,
+      name,
+      role,
+      cli,
+      cwd,
+      status: 'stopped',
+      flags,
+    };
+    data.agents.push(agent);
+    return agent;
+  });
 }
 
 export type AgentUpdate = Partial<Pick<Agent, 'name' | 'role' | 'cli' | 'cwd' | 'status' | 'pid' | 'flags' | 'codexThreadId' | 'pendingGate'>>;
 
 export function updateAgent(projectId: string, agentId: string, updates: AgentUpdate): Agent | null {
-  const data = getProjectData(projectId);
-  if (!data) return null;
+  return mutateProjectData(projectId, (data) => {
   const agent = data.agents.find(a => a.id === agentId);
   if (!agent) return null;
   // Only known fields — never let a request body add arbitrary keys.
@@ -477,18 +564,17 @@ export function updateAgent(projectId: string, agentId: string, updates: AgentUp
       else target[k] = v;
     }
   }
-  saveProjectData(data);
   return agent;
+  });
 }
 
 export function deleteAgent(projectId: string, agentId: string): boolean {
-  const data = getProjectData(projectId);
-  if (!data) return false;
-  const idx = data.agents.findIndex(a => a.id === agentId);
-  if (idx === -1) return false;
-  data.agents.splice(idx, 1);
-  saveProjectData(data);
-  return true;
+  return mutateProjectData(projectId, (data) => {
+    const idx = data.agents.findIndex(a => a.id === agentId);
+    if (idx === -1) return null;
+    data.agents.splice(idx, 1);
+    return true;
+  }) === true;
 }
 
 // --- Plans & Layouts ---

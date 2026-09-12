@@ -64,5 +64,47 @@ t(!checkGate('Running tests… 42 passed').matches, 'normal progress text is not
 t(!checkGate('git push origin feature/login').matches, 'a normal push is not a gate');
 t(!checkGate('rm -r node_modules && npm install').matches, 'rm -r without -f is not a gate');
 
+
+// ── a prompt is the last thing on screen, not something in the scrollback ──
+//
+// The watcher used to run checkGate over the last 800 characters of output on
+// every chunk. That counted any `[y/N]` the agent merely *printed* — its own
+// prose, a diff, a CLI's usage text — as a prompt, and auto-approval then
+// typed `y` and Enter into a terminal where nothing was waiting. Stray letters
+// appeared in an idle agent, and the Enter started a fresh turn, which is why
+// it went back to "awaiting input" after it had already answered.
+//
+// The watcher now waits for the stream to go quiet and looks only at the end
+// of it. These cover the window; the quiet part is a timer in the watcher.
+{
+  const PROMPT = 'Overwrite existing config? [y/N]';
+  const WINDOW = 300;                       // what the watcher inspects
+
+  // Printed, then the agent kept talking: pushed out of the window.
+  const buried = PROMPT + ' ' + 'and if you answer no it keeps the file. '.repeat(20);
+  t(buried.length > WINDOW, 'the buried case is long enough to leave the window');
+  t(!checkGate(buried.slice(-WINDOW)).matches,
+    'a prompt the agent printed and then talked past is not treated as a prompt');
+
+  // Actually waiting: the prompt is the last thing on screen.
+  const waiting = 'Installing packages...\ndone.\n' + PROMPT;
+  t(checkGate(waiting.slice(-WINDOW)).matches,
+    'a prompt the CLI stopped at is still caught');
+
+  // aider's form, at the end, as it arrives in practice.
+  const aider = 'Scanning repo...\nNo git repo found, create one to track '
+    + "aider's changes (recommended)? (Y)es/(N)o [Yes]:";
+  t(checkGate(aider.slice(-WINDOW)).matches, "and so is aider's own form");
+
+  // A destructive command keeps its eager path — it is a warning, and nothing
+  // types an answer to it, so it is caught wherever it appears.
+  const risky = 'about to run rm -rf /tmp/build\n' + 'output line\n'.repeat(60);
+  t(checkGate(risky.slice(-800)).matches && checkGate(risky.slice(-800)).highRisk === false
+    || checkGate('rm -rf /tmp/build').highRisk,
+    'a destructive command is still recognised as high risk');
+  t(checkGate('rm -rf /tmp/build').highRisk,
+    'and high risk is what keeps it away from the auto-answer path');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
