@@ -12,7 +12,15 @@ interface ProviderSpec {
   voices?: VoiceOption[];
 }
 
+/** Nova Sonic's own voices — see src/voice/config.ts for where this list comes from. */
+const NOVA_VOICES: { id: string; label: string }[] = [
+  { id: 'matthew', label: 'Matthew — male, American' },
+  { id: 'tiffany', label: 'Tiffany — female, American' },
+  { id: 'amy', label: 'Amy — female, British' },
+];
+
 interface VoiceConfig {
+  live?: { voice: string };
   stt: {
     provider: 'browser' | 'openai' | 'gemini' | 'groq';
     model: string;
@@ -212,8 +220,12 @@ export default function SettingsModal({ open, onClose, onSaved, onRestartTour }:
       const body: {
         engine: 'pipeline' | 'live';
         stt: VoiceConfig['stt']; tts: VoiceConfig['tts'];
+        live: { voice: string };
         apiKeys?: { openai?: string; gemini?: string };
-      } = { engine, stt: cfg.stt, tts: cfg.tts };
+      } = {
+        engine, stt: cfg.stt, tts: cfg.tts,
+        live: { voice: cfg.live?.voice || 'matthew' },
+      };
       const apiKeys: { openai?: string; gemini?: string } = {};
       if (openaiInput.trim()) apiKeys.openai = openaiInput.trim();
       if (geminiInput.trim()) apiKeys.gemini = geminiInput.trim();
@@ -588,6 +600,31 @@ export default function SettingsModal({ open, onClose, onSaved, onRestartTour }:
                   onChange={(on) => setEngine(on ? 'live' : 'pipeline')}
                 />
               </div>
+              {engine === 'live' && (
+                <div className="settings-field" style={{ marginTop: 14 }}>
+                  <label className="settings-field-label" htmlFor="live-voice">Voice</label>
+                  <div className="settings-field-ctrl">
+                    <select
+                      id="live-voice"
+                      className="settings-select"
+                      value={cfg?.live?.voice || 'matthew'}
+                      onChange={(e) => setCfg((c) => (c
+                        ? { ...c, live: { voice: e.target.value } }
+                        : c))}
+                    >
+                      {NOVA_VOICES.map((v) => (
+                        <option key={v.id} value={v.id}>{v.label}</option>
+                      ))}
+                    </select>
+                    <span className="settings-toggle-desc" style={{ display: 'block', marginTop: 6 }}>
+                      Nova speaks in its own voice, so this is separate from the
+                      text-to-speech voice above &mdash; that one belongs to whichever
+                      provider is selected there, and Nova would not recognise it.
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <p className="settings-toggle-desc" style={{ marginTop: 10 }}>
                 Off, the Keeper uses the original path &mdash; record, transcribe, answer, speak
                 &mdash; which works with any provider above and costs nothing when idle, but takes

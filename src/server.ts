@@ -277,11 +277,11 @@ app.get('/api/voice/config', (_req, res) => {
 app.put('/api/voice/config', (req, res) => {
   try {
     const body = (req.body || {}) as {
-      engine?: unknown; stt?: unknown; tts?: unknown;
+      engine?: unknown; stt?: unknown; tts?: unknown; live?: unknown;
       apiKeys?: { openai?: string; gemini?: string; groq?: string };
     };
     // Settings (engine/stt/tts) live in voice.json.
-    if (body.engine || body.stt || body.tts) {
+    if (body.engine || body.stt || body.tts || body.live) {
       const cur = loadVoiceConfig();
       const engine = body.engine === 'live' || body.engine === 'pipeline'
         ? body.engine
@@ -290,6 +290,7 @@ app.put('/api/voice/config', (req, res) => {
         engine,
         stt: { ...cur.stt, ...((body.stt as Partial<typeof cur.stt>) || {}) },
         tts: { ...cur.tts, ...((body.tts as Partial<typeof cur.tts>) || {}) },
+        live: { ...cur.live, ...((body.live as Partial<typeof cur.live>) || {}) },
       });
     }
     // Secrets (apiKeys) live in api-keys.json — never echoed back.
@@ -537,7 +538,10 @@ voiceWss.on('connection', (ws) => {
     session = new NovaSession({
       systemPrompt: VOICE_SYSTEM_PROMPT,
       tools: VOICE_TOOLS,
-      voiceId: loadVoiceConfig().tts.voice || undefined,
+      // The live engine's own voice, never `tts.voice` — that is a name from
+      // the text-to-speech provider (a browser voice, an OpenAI voice) and
+      // Nova recognises none of them.
+      voiceId: loadVoiceConfig().live?.voice || undefined,
       runTool: (name, input) => runVoiceTool(name, input, {
         // A deferred answer arrives minutes later, long after the tool call
         // returned. Hand it to the browser to announce rather than dropping it.

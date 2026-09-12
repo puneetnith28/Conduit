@@ -48,12 +48,36 @@ export interface VoiceConfig {
     /** Playback rate, 0.25–4.0. Honoured by OpenAI; Gemini ignores it. */
     speed: number;
   };
+  /**
+   * The live engine's own voice.
+   *
+   * Separate from `tts.voice` on purpose. That field holds a name from
+   * whichever text-to-speech provider is selected — "Microsoft David", an
+   * OpenAI voice, a browser voice — and it was being handed to Nova as its
+   * `voiceId`, which knows none of those. Two different vocabularies sharing
+   * one field meant picking a browser voice silently changed what the live
+   * Keeper tried to sound like.
+   */
+  live: {
+    voice: string;
+  };
 }
+
+/**
+ * The voices Nova Sonic accepts.
+ *
+ * From Amazon's documentation for `amazon.nova-2-sonic-v1:0`. Not verified
+ * against the service here — that needs Bedrock credentials, and this machine
+ * has none at the moment — so an unknown value is passed through rather than
+ * rejected, and Nova gets the final say.
+ */
+export const NOVA_VOICES = ['matthew', 'tiffany', 'amy'] as const;
 
 const DEFAULT: VoiceConfig = {
   engine: 'pipeline',
   stt: { provider: 'browser', model: '', language: 'en-US', saveRecordings: false },
   tts: { enabled: true, provider: 'browser', model: '', voice: '', speed: 1.0 },
+  live: { voice: 'matthew' },
 };
 
 export function loadConfig(): VoiceConfig {
@@ -64,6 +88,7 @@ export function loadConfig(): VoiceConfig {
         engine: raw.engine === 'live' ? 'live' : DEFAULT.engine,
         stt: { ...DEFAULT.stt, ...(raw.stt || {}) },
         tts: { ...DEFAULT.tts, ...(raw.tts || {}) },
+        live: { ...DEFAULT.live, ...(raw.live || {}) },
       };
     }
   } catch { /* fall through */ }
