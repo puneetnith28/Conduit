@@ -175,6 +175,8 @@ export interface SupervisorHealth {
   provider: 'bedrock' | 'anthropic' | null;
   configured: string;
   model: string;
+  /** Whether the last good classification ran through the Strands SDK. */
+  strands: boolean;
   lastOkAt: number | null;
   lastError: string | null;
   lastErrorAt: number | null;

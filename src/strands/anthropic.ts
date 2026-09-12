@@ -1,9 +1,15 @@
 /**
  * Anthropic Messages API path for the Supervisor.
  *
- * The Supervisor normally runs on Amazon Bedrock through the Strands SDK. This
- * module is the direct-to-Anthropic alternative, used when Bedrock has no
- * credentials or when `SUPERVISOR_PROVIDER=anthropic` forces it.
+ * The Supervisor runs as a Strands Agent on either Bedrock or Anthropic — see
+ * `buildModel` in agent.ts. This module is two things:
+ *
+ *   1. `anthropicClientOptions()` — the credential the Strands AnthropicModel
+ *      authenticates with, so the SDK covers the Anthropic path too.
+ *   2. `classifyWithAnthropic()` — a hand-rolled Messages API call kept as the
+ *      last resort beneath both. It carries the model ladder below, which the
+ *      SDK route has no equivalent for, and it still answers if the optional
+ *      `@anthropic-ai/sdk` peer is missing at runtime.
  *
  * Credentials, in priority order:
  *   1. `ANTHROPIC_API_KEY` — the supported path (`x-api-key`).
@@ -22,6 +28,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import Anthropic from '@anthropic-ai/sdk';
 import type { SupervisorUpdate, SupervisorClassification } from './agent.js';
 
 const CLAUDE_CREDS = path.join(os.homedir(), '.claude', '.credentials.json');
@@ -114,9 +121,48 @@ function resolveCredential(): Credential {
   };
 }
 
+/**
+ * The same credential as `resolveCredential`, shaped for the Anthropic SDK so
+ * the Strands `AnthropicModel` can use it.
+ *
+ * One resolver, two transports. The OAuth file is read in exactly one place
+ * (`readClaudeOauth`) and turned into headers here or above — do not add a
+ * third reader, because the token rotates on disk and a stale copy fails in a
+ * way that looks like an auth misconfiguration rather than a cache.
+ */
+export function anthropicClientOptions(): { apiKey?: string; client?: Anthropic } {
+  const cred = resolveCredential();
+  if (cred.kind === 'api-key') return { apiKey: cred.headers['x-api-key'] };
+
+  // A Claude Code OAuth token is not an API key, and AnthropicModel throws
+  // unless it gets one -- `clientConfig` alone does not satisfy that check.
+  // Handing it a fully built client is the documented way past it, so the
+  // bearer token authenticates the same way it does on the raw path.
+  return {
+    client: new Anthropic({
+      apiKey: null,
+      authToken: cred.headers.Authorization.replace(/^Bearer /, ''),
+      defaultHeaders: { 'anthropic-beta': cred.headers['anthropic-beta'] },
+    }),
+  };
+}
+
 export function hasAnthropicCredential(): boolean {
   if ((process.env.ANTHROPIC_API_KEY || '').trim()) return true;
   return readClaudeOauth() !== null;
+}
+
+/**
+ * Models that still accept `temperature`.
+ *
+ * The Claude 5 family and 4.6+ answer 400 "`temperature` is deprecated for this
+ * model" rather than ignoring it, so sending it is fatal, not merely useless.
+ * Sampling is left at the provider default there; the Supervisor's determinism
+ * comes from its system prompt and a single required tool call, not from
+ * temperature.
+ */
+export function supportsTemperature(model: string): boolean {
+  return !/(opus|sonnet|haiku|fable)-5|opus-4-[6-9]|sonnet-4-[6-9]|fable-4-[6-9]/i.test(model);
 }
 
 /** Models that reject `output_config.effort` (Haiku 4.5 and the claude-3 family). */
@@ -171,6 +217,24 @@ export function resetModelSelection(): void {
 }
 
 /** The model currently in use, for logging / health output. */
+/**
+ * The ladder, for callers that walk it themselves.
+ *
+ * The Strands AnthropicModel path needs the same sequence the raw path uses:
+ * a Claude Code subscription token is routinely refused on the larger models
+ * and allowed on Haiku, so a 429 on the first rung is a reason to step down,
+ * not a reason to give up on the SDK.
+ */
+export function anthropicCandidates(): string[] {
+  return candidateModels();
+}
+
+/** Remember which rung answered, so the next call starts there. */
+export function noteWorkingModel(model: string): void {
+  resolvedModel = model;
+  resolvedAt = Date.now();
+}
+
 export function currentModel(): string {
   return resolvedModel || candidateModels()[0];
 }

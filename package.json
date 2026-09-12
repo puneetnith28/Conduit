@@ -44,9 +44,11 @@
     "check:ui": "node scripts/check-ui.mjs",
     "check:org": "node scripts/check-org.mjs",
     "check:layout": "node scripts/check-layout.mjs",
-    "check:lifecycle": "node scripts/check-lifecycle.mjs"
+    "check:lifecycle": "node scripts/check-lifecycle.mjs",
+    "check:bedrock": "node scripts/check-bedrock.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.109.1",
     "@aws-sdk/client-bedrock-runtime": "^3.1124.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opentelemetry/api": "^1.9.1",

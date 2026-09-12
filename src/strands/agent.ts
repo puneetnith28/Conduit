@@ -1,6 +1,9 @@
 import { Agent, BedrockModel, tool } from '@strands-agents/sdk';
+// Ships behind its own subpath export; only BedrockModel is on the root.
+import { AnthropicModel } from '@strands-agents/sdk/models/anthropic';
 import { z } from 'zod';
 import { AWS_REGION, BEDROCK_MODEL_ID } from './config.js';
+import { anthropicClientOptions, currentModel, supportsTemperature } from './anthropic.js';
 import {
   getProjectOverview,
   readWiki,
@@ -31,7 +34,37 @@ const SYSTEM_PROMPT = [
   'situation changed.',
 ].join(' ');
 
-function buildModel(): BedrockModel {
+/** Which provider a Supervisor Agent talks to. Both are Strands models. */
+export type SupervisorBackend = 'bedrock' | 'anthropic';
+
+/**
+ * The model the Supervisor Agent runs on.
+ *
+ * Both branches return a Strands `Model`, and that is the point: the Supervisor
+ * is a Strands Agent whichever provider is serving it. Previously the Bedrock
+ * fallback called the Messages API by hand, so on any account without Bedrock
+ * quota — a new AWS account is capped at ~10k tokens/day — Strands dropped out
+ * of the running system entirely and only Bedrock exercised the SDK.
+ *
+ * Bedrock stays preferred. This just means losing it costs you a provider,
+ * not the framework.
+ */
+function buildModel(
+  backend: SupervisorBackend,
+  modelOverride?: string,
+): BedrockModel | AnthropicModel {
+  if (backend === 'anthropic') {
+    // The ladder in anthropic.ts picks this: a Claude Code subscription token
+    // is commonly allowed on Haiku while the larger models answer 429. The
+    // caller may pin a rung while walking that ladder itself.
+    const modelId = modelOverride || currentModel();
+    return new AnthropicModel({
+      ...anthropicClientOptions(),
+      modelId,
+      maxTokens: 512,
+      ...(supportsTemperature(modelId) ? { temperature: 0.2 } : {}),
+    });
+  }
   return new BedrockModel({
     modelId: BEDROCK_MODEL_ID,
     region: AWS_REGION,
@@ -44,7 +77,11 @@ function buildModel(): BedrockModel {
  * A fresh Supervisor agent. Each call gets its own report_update sink so the
  * caller decides what to do with the classification (group chat, gate, TTS).
  */
-export function createSupervisorAgent(onUpdate: (update: SupervisorUpdate) => void) {
+export function createSupervisorAgent(
+  onUpdate: (update: SupervisorUpdate) => void,
+  backend: SupervisorBackend = 'bedrock',
+  modelOverride?: string,
+) {
   const reportUpdate = tool({
     name: 'report_update',
     description: 'Report the classification and summary of an agent\'s recent terminal output.',
@@ -63,7 +100,7 @@ export function createSupervisorAgent(onUpdate: (update: SupervisorUpdate) => vo
     name: 'ConduitSupervisor',
     description: 'Supervises running coding agents by analyzing their output and deciding what matters.',
     systemPrompt: SYSTEM_PROMPT,
-    model: buildModel(),
+    model: buildModel(backend, modelOverride),
     tools: [
       getProjectOverview,
       readWiki,
@@ -76,11 +113,14 @@ export function createSupervisorAgent(onUpdate: (update: SupervisorUpdate) => vo
 }
 
 /** One-shot connectivity test — proves credentials + model access work. */
-export async function runSmokeTest(message: string): Promise<string> {
+export async function runSmokeTest(
+  message: string,
+  backend: SupervisorBackend = 'bedrock',
+): Promise<string> {
   const agent = new Agent({
     name: 'ConduitSupervisorPing',
     systemPrompt: 'Reply in one short sentence.',
-    model: buildModel(),
+    model: buildModel(backend),
     tools: [],
   });
   const result = await agent.invoke(message);

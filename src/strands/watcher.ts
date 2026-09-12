@@ -16,7 +16,11 @@ import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
 import * as runtime from '../daemon/runtime.js';
-import { createSupervisorAgent, type SupervisorUpdate } from './agent.js';
+import {
+  createSupervisorAgent,
+  type SupervisorBackend,
+  type SupervisorUpdate,
+} from './agent.js';
 import { supervisorDisabled, supervisorProvider, BEDROCK_MODEL_ID } from './config.js';
 import { isCredentialError, isModelUnavailable, shouldFallBack } from './failure.js';
 import { isTrustPrompt, answerFor, typeKeys } from '../gate-answer.js';
@@ -27,7 +31,13 @@ import {
 import { checkGate, stripAnsi, gateQuestion } from '../gatePatterns.js';
 import { shouldAutoApprove } from '../gate-policy.js';
 import type { DaemonMessage } from '../daemon/protocol.js';
-import { classifyWithAnthropic, hasAnthropicCredential, currentModel } from './anthropic.js';
+import {
+  anthropicCandidates,
+  classifyWithAnthropic,
+  currentModel,
+  hasAnthropicCredential,
+  noteWorkingModel,
+} from './anthropic.js';
 
 type Broadcast = (msg: DaemonMessage) => void;
 
@@ -228,6 +238,15 @@ let supervisorFailures = 0;
  */
 let lastOkAt = 0;
 let lastOkProvider: 'bedrock' | 'anthropic' | null = null;
+/**
+ * Did the last good classification go through the Strands SDK?
+ *
+ * False only when both Strands paths failed and the hand-rolled Messages API
+ * answered instead. Surfaced on /api/health because "the Supervisor works" and
+ * "the Supervisor works as a Strands Agent" are different claims, and only one
+ * of them is the one this project makes.
+ */
+let lastOkViaStrands = false;
 let lastError: string | null = null;
 let lastErrorAt = 0;
 
@@ -238,6 +257,8 @@ export interface SupervisorHealth {
   provider: 'bedrock' | 'anthropic' | null;
   configured: string;
   model: string;
+  /** Whether the last good classification ran through the Strands SDK. */
+  strands: boolean;
   lastOkAt: number | null;
   lastError: string | null;
   lastErrorAt: number | null;
@@ -249,7 +270,7 @@ export function supervisorHealth(): SupervisorHealth {
   if (supervisorDisabled()) {
     return {
       state: 'off', provider: null, configured: supervisorProvider(),
-      model: '', lastOkAt: null, lastError: null, lastErrorAt: null,
+      model: '', strands: false, lastOkAt: null, lastError: null, lastErrorAt: null,
       consecutiveFailures: 0, pausedForMs: 0,
     };
   }
@@ -265,6 +286,7 @@ export function supervisorHealth(): SupervisorHealth {
     provider: lastOkProvider,
     configured: supervisorProvider(),
     model: lastOkProvider === 'anthropic' ? currentModel() : BEDROCK_MODEL_ID,
+    strands: lastOkViaStrands,
     lastOkAt: lastOkAt || null,
     lastError,
     lastErrorAt: lastErrorAt || null,
@@ -329,29 +351,91 @@ function backOff(reason: string, hint: string) {
   }
 }
 
-/** Say it once per process, not once per batch. */
+/** Say each of these once per process, not once per batch. */
 let fallbackAnnounced = false;
+let rawPathAnnounced = false;
+
+/**
+ * Run one classification as a Strands Agent on `backend`.
+ *
+ * On the Anthropic backend only, a failure drops to `classifyWithAnthropic` —
+ * the hand-rolled Messages API call. That ordering is deliberate: Strands is
+ * the framework this project is built on, so Strands should be what actually
+ * runs. The raw path stays for the two things the SDK route cannot do: walk the
+ * model ladder when a subscription token 429s on the larger models, and answer
+ * at all if the optional `@anthropic-ai/sdk` peer is missing at runtime.
+ */
+async function runAsStrandsAgent(
+  backend: SupervisorBackend,
+  prompt: string,
+  onUpdate: (u: SupervisorUpdate) => void,
+): Promise<void> {
+  if (backend === 'bedrock') {
+    // Bedrock's failure is the caller's to interpret — it decides whether
+    // falling back to Anthropic is allowed at all.
+    await createSupervisorAgent(onUpdate, 'bedrock').invoke(prompt);
+    lastOkProvider = 'bedrock';
+    lastOkViaStrands = true;
+    return;
+  }
+
+  // Walk the same ladder the raw path walks, rather than giving up on the SDK
+  // because the top rung was rate limited.
+  let lastErr: unknown = null;
+  for (const modelId of anthropicCandidates()) {
+    try {
+      await createSupervisorAgent(onUpdate, 'anthropic', modelId).invoke(prompt);
+      noteWorkingModel(modelId);
+      lastOkProvider = 'anthropic';
+      lastOkViaStrands = true;
+      return;
+    } catch (err) {
+      lastErr = err;
+      // Only a rate limit or a model-level refusal is worth another rung.
+      // An auth failure will fail identically all the way down.
+      if (!/429|rate.?limit|throttl|not.?found|model/i.test(describeError(err))) break;
+    }
+  }
+
+  {
+    const err = lastErr;
+    const msg = describeError(err);
+    if (!rawPathAnnounced) {
+      rawPathAnnounced = true;
+      console.log(
+        `[watcher] The Strands AnthropicModel could not serve this (${msg}).\n`
+        + '          Using the direct Messages API path instead.',
+      );
+    }
+    onUpdate(await classifyWithAnthropic(prompt));
+    lastOkProvider = 'anthropic';
+    lastOkViaStrands = false;
+  }
+}
 
 /**
  * Run one classification through the configured provider.
  *
  *   bedrock   — Strands + Bedrock only
- *   anthropic — the Anthropic Messages API only
- *   auto      — Bedrock, then Anthropic if Bedrock cannot serve the request
- *               (no credentials, a retired model, or a rate cap)
+ *   anthropic — Strands + Anthropic only
+ *   auto      — Strands + Bedrock, then Strands + Anthropic if Bedrock cannot
+ *               serve the request (no credentials, a retired model, a rate cap,
+ *               or no Marketplace entitlement for the model)
+ *
+ * Every branch is a Strands Agent. Losing Bedrock costs a provider, not the
+ * framework — which matters on a new AWS account, where Bedrock is capped at
+ * roughly 10k tokens a day until the quota is raised.
  */
 async function classify(prompt: string, onUpdate: (u: SupervisorUpdate) => void): Promise<void> {
   const provider = supervisorProvider();
 
   if (provider === 'anthropic') {
-    onUpdate(await classifyWithAnthropic(prompt));
-    lastOkProvider = 'anthropic';
+    await runAsStrandsAgent('anthropic', prompt, onUpdate);
     return;
   }
 
   try {
-    await createSupervisorAgent(onUpdate).invoke(prompt);
-    lastOkProvider = 'bedrock';
+    await runAsStrandsAgent('bedrock', prompt, onUpdate);
   } catch (err) {
     const msg = describeError(err);
     if (provider === 'bedrock' || !shouldFallBack(msg) || !hasAnthropicCredential()) throw err;
@@ -359,12 +443,11 @@ async function classify(prompt: string, onUpdate: (u: SupervisorUpdate) => void)
       fallbackAnnounced = true;
       console.log(
         `[watcher] Bedrock unavailable (${msg})\n`
-        + `          Falling back to the Anthropic API on ${currentModel()}. `
-        + 'Set BEDROCK_MODEL_ID to a model your IAM policy allows to use Bedrock instead.',
+        + `          Still a Strands Agent — switching it to Anthropic on ${currentModel()}. `
+        + 'Fix Bedrock model access or quota to go back.',
       );
     }
-    onUpdate(await classifyWithAnthropic(prompt));
-    lastOkProvider = 'anthropic';
+    await runAsStrandsAgent('anthropic', prompt, onUpdate);
   }
 }
 

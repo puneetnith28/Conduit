@@ -239,9 +239,19 @@ The daemon binds loopback only and is never exposed.
 
 ### Two brains, different jobs
 
+The Supervisor is a Strands Agent (`Agent` + `BedrockModel` / `AnthropicModel`, with
+`report_update` and `plan_action` as Strands `tool()`s). `SUPERVISOR_PROVIDER` picks the
+backend: `bedrock`, `anthropic`, or `auto` — Bedrock first, Anthropic if Bedrock cannot
+serve the request. Both run through the SDK, which matters on a new AWS account: Bedrock
+caps you near 10k tokens a day until the quota is raised, and before this the fallback
+called the Messages API by hand, so the framework quietly dropped out of the running
+system exactly when Bedrock was unavailable. `GET /api/health` reports
+`supervisorHealth.strands` — whether the last good classification actually went through
+the SDK — alongside `provider` and `model`.
+
 |  | The Supervisor | The Keeper |
 |---|---|---|
-| Runs on | Strands Agents SDK + Bedrock, or the Anthropic Messages API | `codex exec`, or `claude -p` |
+| Runs on | Strands Agents SDK — on Bedrock, or on Anthropic | `codex exec`, or `claude -p` |
 | Job | Reads agent output, classifies it, raises gates, proposes plans | Answers questions about the whole org and acts when you ask |
 | Acts on its own? | **Never.** Write intent goes through `plan_action` and your approval | Only what you ask it in the Command panel |
 | Tools | `report_update`, `plan_action` | 12 Conduit tools — list, inspect, start, stop, ask, broadcast |
@@ -590,8 +600,9 @@ trade for a single-user local tool and it is the wrong trade on a shared machine
 ## Built with
 
 TypeScript throughout, 92 source files. Express 4, `ws`, node-pty, chokidar. React 18,
-Vite, xterm.js, marked with DOMPurify. AWS Strands Agents SDK with Amazon Bedrock, and the
-Anthropic Messages API as a fallback. Model Context Protocol for agent-to-agent messaging
+Vite, xterm.js, marked with DOMPurify. AWS Strands Agents SDK, running on Amazon Bedrock or
+on Anthropic — the Supervisor is a Strands Agent either way, so losing one provider
+costs a provider, not the framework. Model Context Protocol for agent-to-agent messaging
 and for the Keeper's tools. Electron with electron-builder for the desktop app.
 
 No test framework — the suites are plain Node scripts that print what they checked and exit

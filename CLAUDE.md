@@ -41,10 +41,12 @@ src/
     orchestrator.ts    The Keeper (codex exec / claude -p loop, conversations)
     conduit.ts         ask_agent / start_agent / broadcast dispatch
   strands/
-    agent.ts           Supervisor agent (BedrockModel + report_update / plan_action tools)
+    agent.ts           Supervisor agent (Bedrock/Anthropic model + report_update /
+                       plan_action tools). buildModel() picks the provider; both are Strands.
     watcher.ts         per-agent watchdog: fast regex gates + batched Supervisor calls
     failure.ts         is a failure worth falling back on? (pure, no imports)
-    anthropic.ts       the fallback provider; used whenever Bedrock cannot serve
+    anthropic.ts       the Anthropic credential (shared with the Strands AnthropicModel)
+                       and a raw Messages API path kept only as the last resort
     tools.ts, config.ts
   voice/               STT/TTS providers + settings (browser | groq | openai | gemini;
                        groq is STT-only and the recommended engine)
@@ -66,11 +68,16 @@ scripts/
   check-nova.mjs       the live voice model with the shipped tool set
 ```
 
-## Two rules that are easy to break by accident
+## Rules that are easy to break by accident
 
 - **Gate resolution has one implementation.** `src/gate-resolve.ts`. The REST route and the
   voice path both call it. Two copies of "what actually reaches the agent" will drift, and
   the half that drifts is the one answering a destructive prompt.
+- **The Supervisor must run through Strands on every provider.** `classify()` in
+  `strands/watcher.ts` routes both backends through `createSupervisorAgent`. The raw
+  Messages API path in `anthropic.ts` is a last resort beneath both, not a peer of them.
+  A fallback that bypasses the SDK means the framework is absent precisely when the
+  primary provider is down, which is when you are most likely to be looking.
 - **Approving a gate by voice is enforced server-side**, in `src/voice/approval-guard.ts`,
   never by telling the model to ask first. The confirmation is read from the transcript
   stream so the model cannot supply its own. Do not add an approve action to
