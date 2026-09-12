@@ -320,6 +320,53 @@ try {
     `the app owns a process tree — daemon, web server and ${agentIds.length} agent(s)`,
     `${descendants.length} descendant process(es)`);
 
+  // ── everything the dev server has, the installed app must have too ──
+  //
+  // This is the gap that made "works on my machine" literal. `src/env.ts`
+  // reads ./.env and ~/.conduit/.env, and the packaged app runs from its
+  // install directory — so the repo's .env is invisible to it. AWS credentials
+  // that lived only in the repo file gave a dev server with Bedrock and live
+  // voice, and an installed app quietly without either: the Supervisor on its
+  // fallback, the live Keeper simply absent.
+  //
+  // Nothing failed. It just did less, and said nothing about it, which is why
+  // these assertions exist.
+  {
+    const health = await api('GET', '/health');
+    const h = health.json || {};
+    t(!!h.region && !!h.bedrockModel,
+      'the app knows which Bedrock model and region to use',
+      `region=${h.region} model=${h.bedrockModel}`);
+
+    const sup = h.supervisorHealth || {};
+    t(sup.state !== 'failing',
+      'the Supervisor is not failing in the packaged app',
+      `${sup.state}: ${String(sup.lastError || '').slice(0, 90)}`);
+
+    // The real question: can the installed app open a live voice session?
+    // /api/voice/config returns booleans, never secrets, so this asks the
+    // socket instead — the same path the browser uses.
+    const { WebSocket: VWS } = await import('ws');
+    const vws = new VWS(`ws://127.0.0.1:${PORT}/ws/voice`);
+    let ready = false;
+    let voiceErr = '';
+    await new Promise((res) => {
+      vws.on('open', () => { vws.send(JSON.stringify({ type: 'start' })); });
+      vws.on('message', (raw) => {
+        try {
+          const m = JSON.parse(raw.toString());
+          if (m.type === 'ready') { ready = true; res(); }
+          if (m.type === 'error') { voiceErr = String(m.message || '').slice(0, 110); res(); }
+        } catch { /* binary audio — not what we are waiting for */ }
+      });
+      vws.on('error', (e) => { voiceErr = String(e?.message || e).slice(0, 110); res(); });
+      setTimeout(res, 20000);
+    });
+    t(ready, 'the live voice session opens in the packaged app',
+      voiceErr || 'no ready event in 20s');
+    try { vws.close(); } catch { /* ignore */ }
+  }
+
   t(pageErrors.length === 0, 'the renderer logged no errors',
     pageErrors.slice(0, 3).map((e) => String(e).split('\n')[0]).join(' | '));
 
