@@ -226,7 +226,21 @@ export function resetModelSelection(): void {
  * not a reason to give up on the SDK.
  */
 export function anthropicCandidates(): string[] {
-  return candidateModels();
+  const ladder = candidateModels();
+  // Start from the rung that last answered, not the top.
+  //
+  // Without this, `noteWorkingModel` records a working model that nothing ever
+  // reads, and every single classification re-walks the ladder from the top:
+  // three API calls where one would do, two of them rate-limit round trips.
+  // That latency is enough to push a classification past the window its caller
+  // is waiting in, so the Supervisor looks dead while actually succeeding.
+  //
+  // The rest stay behind it as backup, and `resolvedAt` ages out after
+  // MODEL_RECHECK_MS so a passing rate limit does not pin us to the smallest
+  // model for the life of the process.
+  const fresh = resolvedModel && Date.now() - resolvedAt < MODEL_RECHECK_MS;
+  if (!fresh || !resolvedModel) return ladder;
+  return [resolvedModel, ...ladder.filter((m) => m !== resolvedModel)];
 }
 
 /** Remember which rung answered, so the next call starts there. */
