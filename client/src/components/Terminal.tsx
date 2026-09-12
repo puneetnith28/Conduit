@@ -114,6 +114,7 @@ export default function Terminal({ agentId, ws, onFocus, focused }: Props) {
       lineHeight: 1.22,
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
       theme: wantsDark() ? DARK_THEME : LIGHT_THEME,
+      minimumContrastRatio: 7,
       scrollback: 5000,
       allowProposedApi: true,
     });
