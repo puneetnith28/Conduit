@@ -4,9 +4,10 @@ import ConduitAgentDemo from './ConduitAgentDemo';
 import ToolEcosystemSection from './ecosystem/ToolEcosystemSection';
 import WorkflowShowcaseSection from './WorkflowShowcaseSection';
 import { BrandIcons } from './ecosystem/BrandIcons';
-import DownloadModal from './DownloadModal';
 import { WatchClassifyDemo, GateApprovalDemo } from './safety/SafetyLoopShowcase';
 import FaqSection from './FaqSection';
+import DownloadModal from './DownloadModal';
+import LandingFooter from './LandingFooter';
 
 interface LandingPageProps {
   onOpenConsole: () => void;
@@ -306,6 +307,12 @@ export default function LandingPage({ onOpenConsole, onStartTour }: LandingPageP
 
       {/* Section 5: Real FAQ */}
       <FaqSection />
+
+      {/* Minimal Footer */}
+      <LandingFooter
+        onOpenConsole={onOpenConsole}
+        onOpenDownload={() => setIsDownloadOpen(true)}
+      />
 
       {/* Desktop App Download Modal Popup */}
       <DownloadModal isOpen={isDownloadOpen} onClose={() => setIsDownloadOpen(false)} />
