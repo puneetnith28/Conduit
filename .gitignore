@@ -27,3 +27,6 @@ plan3.md
 
 # aider writes these into whatever directory it runs in, and agents run here
 .aider*
+
+# Video/demo scripts — local working notes, never part of the repo.
+docs/demo-script-*.md
