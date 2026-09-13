@@ -303,6 +303,10 @@ async function handleRequest(ws: WebSocket, req: DaemonRequest): Promise<void> {
         return reply({ ok: true });
       }
       case 'agent:inject': {
+        const status = agentStatus.get(req.agentId);
+        if (status === 'awaiting_input' || status === 'idle') {
+          return reply({ delivered: false, error: 'Agent is waiting at a prompt' });
+        }
         const delivered = runtime.injectMessage(req.agentId, req.fromName, req.message);
         return reply({ delivered });
       }
@@ -624,6 +628,12 @@ async function handleHttp(httpReq: IncomingMessage, res: ServerResponse) {
       const targetAgent = proj.agents.find(a => a.id === agent || a.name.toLowerCase() === agent.toLowerCase());
       if (!targetAgent) {
         sendJson(res, 404, { ok: false, error: 'Agent not found' });
+        return;
+      }
+
+      const status = agentStatus.get(targetAgent.id);
+      if (status === 'awaiting_input' || status === 'idle') {
+        sendJson(res, 400, { ok: false, error: 'Agent is waiting at a prompt. Delivering a message now would type it into the prompt.' });
         return;
       }
 
