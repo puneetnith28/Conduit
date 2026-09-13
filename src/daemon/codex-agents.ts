@@ -422,6 +422,14 @@ function submitTurn(s: CodexSession, text: string, model?: string, effort?: stri
 }
 
 /** Pull a resumed thread's past turns/items back into the view. */
+/**
+ * How Codex should ask before acting.
+ *
+ * Overridable because the accepted values are the CLI's, not ours, and they
+ * have changed once already.
+ */
+const CODEX_APPROVAL_POLICY = process.env.CODEX_APPROVAL_POLICY || 'on-request';
+
 async function loadHistory(cs: CodexAppServer, s: CodexSession): Promise<void> {
   try {
     const r = await cs.request('thread/read', { threadId: s.threadId, includeTurns: true });
@@ -467,7 +475,16 @@ export async function startAgent(agent: Agent, statusFn: StatusFn): Promise<bool
   const baseParams = {
     cwd,
     sandbox: 'workspace-write',
-    approvalPolicy: 'on-failure',
+    // 'on-failure' was removed from codex app-server; 0.154 accepts only
+    // untrusted | on-request | granular | never, and rejects the whole
+    // thread/start with "unknown variant" — which surfaced as "Failed to
+    // start", with nothing saying why.
+    //
+    // 'on-request' is the closest match and the right one anyway: Codex asks
+    // before doing something it thinks needs permission, and that question
+    // becomes a Conduit gate. 'never' would run unattended straight past the
+    // approval loop this project exists for.
+    approvalPolicy: CODEX_APPROVAL_POLICY,
     config: env.config,
     developerInstructions: env.developerInstructions,
   };
@@ -546,7 +563,7 @@ export async function newThread(agentId: string): Promise<boolean> {
     const env = buildAgentEnv(s.agent);
     const r = await server.request('thread/start', {
       cwd: expandHome(s.agent.cwd),
-      sandbox: 'workspace-write', approvalPolicy: 'on-failure',
+      sandbox: 'workspace-write', approvalPolicy: CODEX_APPROVAL_POLICY,
       config: env.config, developerInstructions: env.developerInstructions,
     });
     const newId: string = r?.thread?.id || '';

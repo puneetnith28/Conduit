@@ -28,16 +28,16 @@ const DOWNLOAD_OPTIONS: PlatformConfig[] = [
     badge: 'Available Now',
     formats: [
       {
-        label: 'Standalone Executable (.exe)',
-        file: 'Conduit.exe',
-        size: '234 MB',
+        label: 'Windows Installer (.exe)',
+        file: 'Conduit-Setup-1.0.0.exe',
+        size: '',
         available: true,
         btnLabel: 'Download .exe',
       },
       {
         label: 'Portable Archive (.zip)',
-        file: 'Conduit-1.0.0-win.zip',
-        size: '543 MB',
+        file: 'Conduit-1.0.0-win-x64.zip',
+        size: '',
         available: true,
         btnLabel: 'Download .zip',
       },
@@ -93,6 +93,52 @@ interface DownloadModalProps {
 }
 
 export default function DownloadModal({ isOpen, onClose }: DownloadModalProps) {
+  /**
+   * What the server actually has on disk.
+   *
+   * The table above is the shape of the offer {D} which platforms exist, in what
+   * formats. The filenames and sizes come from the server, because they change
+   * every time a build is cut and a hardcoded one goes stale silently: the row
+   * still says "Download", the link still looks like a link, and the person who
+   * clicks it gets a 404 or, worse, a redirect to a release that was never
+   * published.
+   *
+   * Until this resolves, a row shows its label without a size rather than a
+   * number invented at author time.
+   */
+  const [onDisk, setOnDisk] = useState<Record<string, number> | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    fetch('/downloads')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.files) return;
+        const map: Record<string, number> = {};
+        for (const f of data.files) map[f.name] = f.size;
+        setOnDisk(map);
+      })
+      .catch(() => { /* offline, or serving the SPA without the server */ });
+    return () => { cancelled = true; };
+  }, [isOpen]);
+
+  const humanSize = (bytes: number) =>
+    bytes >= 1073741824
+      ? (bytes / 1073741824).toFixed(1) + ' GB'
+      : Math.round(bytes / 1048576) + ' MB';
+
+  /** A format is offered only if the file is really there. */
+  const resolve = (fmt: DownloadFormat): DownloadFormat => {
+    if (!fmt.available) return fmt;
+    if (!onDisk) return { ...fmt, size: fmt.size || 'checking...' };
+    const bytes = onDisk[fmt.file];
+    if (bytes === undefined) {
+      return { ...fmt, available: false, size: 'Not built yet' };
+    }
+    return { ...fmt, size: humanSize(bytes) };
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) onClose();
@@ -161,7 +207,7 @@ export default function DownloadModal({ isOpen, onClose }: DownloadModalProps) {
                 <span className={`platform-status-badge ${opt.status}`}>{opt.badge}</span>
               </div>
               <div className="platform-formats-list">
-                {opt.formats.map((fmt) => (
+                {opt.formats.map(resolve).map((fmt) => (
                   <div
                     key={fmt.file}
                     className={`download-format-row ${fmt.available ? 'available' : 'unavailable'}`}

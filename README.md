@@ -109,9 +109,8 @@ matters on a new machine — which agents actually work here — and it distingu
 from *silently broken*:
 
 ```
-✓ claude    running — 1795 bytes of terminal output
-✓ codex     refused (400) — Codex CLI needs the `codex` command, which is not on PATH.
-                            Install it with:  npm install -g @openai/codex
+✓ claude    running — 882 bytes of terminal output
+✓ codex     running — 12 bytes of terminal output
 ✓ gemini    running — 846 bytes of terminal output
 ✓ opencode  running — 287 bytes of terminal output
 ✓ gpt       running — 553 bytes of terminal output
@@ -576,7 +575,7 @@ attaching to one already running — then asserts, in order:
   ✓ the React app mounted inside the Electron window
   ✓ an external link does not open inside the app
   ✓ claude    running — 1807 bytes of terminal output
-  ✓ codex     refused with a reason — Codex CLI needs the `codex` command, which is not on PATH.
+  ✓ codex     running — app-server thread started
   ✓ gemini / opencode / gpt / nemotron   running
   ✓ The Keeper answered on the claude engine
   ✓ The Keeper could reach its tools — the MCP server resolved
