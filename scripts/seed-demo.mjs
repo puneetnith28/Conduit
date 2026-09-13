@@ -113,26 +113,71 @@ if (already) {
 }
 console.log(`workspace: ${WORKSPACE}`);
 
-// ── one agent per CLI ─────────────────────────────────────────────────
-// All six, always. Creating an agent does not check whether its CLI exists —
-// that check happens on *start*, which is the right place for it: you can
-// define your fleet now and install a tool later. So a tester ends up with all
-// six visible, and pressing Start on one whose CLI is missing tells them the
-// command that installs it. That is a better introduction than a short list
-// with no explanation of what is absent or why.
-const ALL_CLIS = ['claude', 'codex', 'gemini', 'opencode', 'gpt', 'nemotron'];
+// ── one agent per CLI that this machine can actually run ──────────────
+//
+// Creating an agent never checks whether its CLI exists; that happens on
+// *start*. Seeding all six therefore hands a first-time tester a console where
+// some agents work and some fail the moment they are clicked, with no way to
+// tell which is which beforehand. So check here, create what can run, and say
+// plainly what was left out and how to add it.
+//
+// The binary for each id mirrors src/cli-registry.ts, which is the authority.
+// If a CLI is added there, add it here too.
+const CLI_BINARY = {
+  claude: 'claude',
+  codex: 'codex',
+  gemini: 'gemini',
+  opencode: 'opencode',
+  gpt: 'aider',
+  nemotron: 'aider',
+};
 
 const LABEL = {
   claude: 'Claude', codex: 'Codex', gemini: 'Gemini',
   opencode: 'OpenCode', gpt: 'Gpt', nemotron: 'Nemotron',
 };
 
+const INSTALL = {
+  claude: 'npm install -g @anthropic-ai/claude-code',
+  codex: 'npm install -g @openai/codex',
+  gemini: 'npm install -g @google/gemini-cli',
+  opencode: 'npm install -g opencode-ai',
+  gpt: 'uv tool install --python 3.12 aider-chat',
+  nemotron: 'uv tool install --python 3.12 aider-chat',
+};
+
+/** Is this binary on PATH? Same question the daemon asks before spawning. */
+function onPath(bin) {
+  const dirs = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  const exts = process.platform === 'win32'
+    ? (process.env.PATHEXT || '.EXE;.CMD;.BAT').split(';').filter(Boolean)
+    : [''];
+  for (const dir of dirs) {
+    for (const ext of ['', ...exts]) {
+      try {
+        if (fs.existsSync(path.join(dir, bin + ext))) return true;
+      } catch { /* unreadable PATH entry */ }
+    }
+  }
+  return false;
+}
+
+// Only meaningful when the server is on this machine, which is the default.
+const remote = !/^https?:\/\/(localhost|127\.0\.0\.1)(:|$|\/)/.test(BASE);
+const ALL_CLIS = ['claude', 'codex', 'gemini', 'opencode', 'gpt', 'nemotron'];
+const runnable = remote ? ALL_CLIS : ALL_CLIS.filter((c) => onPath(CLI_BINARY[c]));
+const missing = ALL_CLIS.filter((c) => !runnable.includes(c));
+
+if (remote) {
+  console.log('(remote CONDUIT_URL — seeding all six, since this machine\'s PATH says nothing about that server)');
+}
+
 const before = await api('GET', `/projects/${projectId}/agents`);
 const have = new Set((before.json || []).map((a) => a.cli));
 
 let added = 0;
 const skipped = [];
-for (const cli of ALL_CLIS) {
+for (const cli of runnable) {
   if (have.has(cli)) continue;
   const r = await api('POST', `/projects/${projectId}/agents`, {
     name: LABEL[cli] || cli, cli,
@@ -147,9 +192,14 @@ if (skipped.length) {
   console.log('refused by the server:');
   for (const s of skipped) console.log('  - ' + s);
 }
-console.log('');
-console.log('Agents are created without checking their CLI is installed. Pressing Start');
-console.log('on one that is missing tells you the command that installs it.');
+if (missing.length) {
+  console.log('');
+  console.log('Not seeded, because the CLI is not on this machine:');
+  for (const c of missing) {
+    console.log(`  ${(LABEL[c] || c).padEnd(10)} ${INSTALL[c]}`);
+  }
+  console.log('Install one and re-run this to add it. You do not need all six.');
+}
 console.log('');
 console.log(`Open ${BASE}/#console and press Start on an agent.`);
 console.log('Nothing was started — that would spend your API budget without asking.');

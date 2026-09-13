@@ -47,7 +47,8 @@
     "check:lifecycle": "node scripts/check-lifecycle.mjs",
     "check:bedrock": "node scripts/check-bedrock.mjs",
     "seed:demo": "node scripts/seed-demo.mjs",
-    "icons": "node scripts/make-icons.mjs"
+    "icons": "node scripts/make-icons.mjs",
+    "demo:reset": "node scripts/demo-reset.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.109.1",
