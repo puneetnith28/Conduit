@@ -225,6 +225,33 @@ function detachTerminal(ws: WebSocket, agentId: string) {
 
 // ─────────────────────────── WebSocket requests ───────────────────────────
 
+/**
+ * Is this agent stopped at a prompt that is waiting for a specific answer?
+ *
+ * Only a *pending gate* means that. `awaiting_input` and `idle` do not: those
+ * are the ordinary resting states of an agent that finished a turn, which is
+ * precisely when a human, the Keeper or an approved plan wants to send the next
+ * instruction. Refusing there breaks ask_agent, broadcast, and plan delivery
+ * — everything except the one case this is meant to catch.
+ *
+ * The case it is meant to catch is aider sitting on "(Y)es/(N)o": a message
+ * delivered then becomes the answer to that question. A gate is raised for
+ * exactly those, so a gate is the thing to test.
+ */
+function isBlockedOnPrompt(agentId: string, projectId?: string): boolean {
+  try {
+    if (projectId) return !!storage.getAgent(projectId, agentId)?.pendingGate;
+    // The WS request carries no project id, so find the agent by its own.
+    for (const p of storage.listProjects()) {
+      const a = storage.getAgent(p.id, agentId);
+      if (a) return !!a.pendingGate;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 async function handleRequest(ws: WebSocket, req: DaemonRequest): Promise<void> {
   if (!('id' in req)) {
     switch (req.op) {
@@ -303,9 +330,11 @@ async function handleRequest(ws: WebSocket, req: DaemonRequest): Promise<void> {
         return reply({ ok: true });
       }
       case 'agent:inject': {
-        const status = agentStatus.get(req.agentId);
-        if (status === 'awaiting_input' || status === 'idle') {
-          return reply({ delivered: false, error: 'Agent is waiting at a prompt' });
+        if (isBlockedOnPrompt(req.agentId)) {
+          return reply({
+            delivered: false,
+            error: 'Agent is waiting on an approval gate. Answer that first.',
+          });
         }
         const delivered = runtime.injectMessage(req.agentId, req.fromName, req.message);
         return reply({ delivered });
@@ -631,9 +660,12 @@ async function handleHttp(httpReq: IncomingMessage, res: ServerResponse) {
         return;
       }
 
-      const status = agentStatus.get(targetAgent.id);
-      if (status === 'awaiting_input' || status === 'idle') {
-        sendJson(res, 400, { ok: false, error: 'Agent is waiting at a prompt. Delivering a message now would type it into the prompt.' });
+      if (isBlockedOnPrompt(targetAgent.id, proj.project.id)) {
+        sendJson(res, 400, {
+          ok: false,
+          error: 'Agent is waiting on an approval gate. Answering that first stops '
+            + 'this message being typed in as the answer.',
+        });
         return;
       }
 
