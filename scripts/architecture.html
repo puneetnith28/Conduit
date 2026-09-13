@@ -1,0 +1,218 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Conduit architecture</title>
+<style>
+  :root {
+    --ink: #0d1117;
+    --line: #8b949e;
+    --text: #e6edf3;
+    --muted: #9aa4b2;
+    --box: #161b22;
+    --edge: #30363d;
+    --web: #58a6ff;
+    --daemon: #d29922;
+    --aws: #ff9900;
+    --danger: #f85149;
+    --ok: #3fb950;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ink); color: var(--text);
+    font: 14px/1.35 'Segoe UI', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #sheet { width: 1500px; padding: 34px 38px 30px; }
+
+  h1 { font-size: 22px; margin: 0 0 2px; letter-spacing: -.2px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 22px; }
+
+  .row { display: flex; gap: 18px; align-items: stretch; }
+  .col { display: flex; flex-direction: column; gap: 14px; }
+
+  .box {
+    background: var(--box); border: 1.5px solid var(--edge);
+    border-radius: 10px; padding: 12px 14px;
+  }
+  .box.web    { border-color: var(--web); }
+  .box.daemon { border-color: var(--daemon); }
+  .box.aws    { border-color: var(--aws); }
+
+  .title { font-weight: 650; font-size: 15px; display: flex; align-items: baseline; gap: 8px; }
+  .title .port { font-weight: 400; font-size: 12px; color: var(--muted); }
+  .owns { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+  .chip {
+    border: 1px solid var(--edge); border-radius: 6px;
+    padding: 5px 9px; font-size: 12px; background: #0f141b; white-space: nowrap;
+  }
+  .chip.b { border-color: var(--web); }
+  .chip.d { border-color: var(--daemon); }
+  .chip.a { border-color: var(--aws); }
+
+  .agents { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 10px; }
+  .agent {
+    border: 1px solid var(--edge); border-radius: 6px; padding: 6px 8px;
+    font-size: 11.5px; background: #0f141b;
+  }
+  .agent b { display: block; font-weight: 600; font-size: 12px; }
+  .agent span { color: var(--muted); font-size: 10.5px; }
+
+  .arrow { display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 11.5px; }
+  .arrow.v { flex-direction: column; gap: 3px; padding: 2px 0; }
+  .glyph { color: var(--line); font-size: 17px; line-height: 1; }
+
+  .note {
+    margin-top: 6px; font-size: 11.5px; color: var(--muted);
+    border-left: 2px solid var(--edge); padding-left: 9px;
+  }
+  .key { color: var(--text); font-weight: 600; }
+  .stop { color: var(--danger); font-weight: 600; }
+  .go { color: var(--ok); font-weight: 600; }
+  .legend { margin-top: 18px; display: flex; gap: 20px; font-size: 11.5px; color: var(--muted); }
+  .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+</style>
+
+<div id="sheet">
+  <h1>Conduit — architecture</h1>
+  <p class="sub">
+    Two processes. The daemon owns every agent terminal; the web server only relays to it.
+    Restarting the interface does not kill your agents.
+  </p>
+
+  <!-- human -->
+  <div class="row">
+    <div class="box" style="flex:1">
+      <div class="title">You</div>
+      <div class="owns">Browser at :3200, or the packaged desktop app (same UI, same server, bundled)</div>
+      <div class="chips">
+        <div class="chip b">Terminals</div>
+        <div class="chip b">Group Chat</div>
+        <div class="chip b">MCP Messages</div>
+        <div class="chip b">Shared</div>
+        <div class="chip b">Wiki</div>
+        <div class="chip b">Activity</div>
+        <div class="chip b">Usage</div>
+        <div class="chip b">Approval gate</div>
+        <div class="chip b">Voice — wake word, speak, interrupt</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow v"><span class="glyph">&#8597;</span><span>REST + WebSocket</span></div>
+
+  <div class="row">
+    <!-- web server -->
+    <div class="col" style="flex:1.05">
+      <div class="box web">
+        <div class="title">Web server <span class="port">src/server.ts &middot; :3200</span></div>
+        <div class="owns">Owns no processes. Serves the UI, exposes REST, relays every op to the daemon.</div>
+        <div class="chips">
+          <div class="chip b">React UI</div>
+          <div class="chip b">REST routes</div>
+          <div class="chip b">Browser WebSocket</div>
+          <div class="chip b">Basic auth</div>
+          <div class="chip b">/ws/voice &rarr; Nova</div>
+        </div>
+        <div class="note">
+          Restart it and the agents keep running &mdash; nothing it holds is the agent.
+        </div>
+      </div>
+
+      <div class="box aws">
+        <div class="title">Voice &mdash; Amazon Nova Sonic</div>
+        <div class="owns">Bidirectional speech, sub-second. 8 tools, including gates.</div>
+        <div class="note">
+          <span class="stop">reject</span> out loud always works.
+          <span class="go">approve</span> needs four server-checked conditions
+          (<code>src/voice/approval-guard.ts</code>).
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow"><span class="glyph">&#8646;</span></div>
+
+    <!-- daemon -->
+    <div class="col" style="flex:1.25">
+      <div class="box daemon">
+        <div class="title">Daemon <span class="port">src/daemon/daemon.ts &middot; :3210 loopback</span></div>
+        <div class="owns">Owns every agent process, the status engine, the watcher and the Keeper.</div>
+        <div class="chips">
+          <div class="chip d">PTY manager</div>
+          <div class="chip d">Status engine</div>
+          <div class="chip d">The Keeper</div>
+          <div class="chip d">/org/* API</div>
+        </div>
+
+        <div class="agents">
+          <div class="agent"><b>Claude Code</b><span>PTY &middot; lifecycle hooks &middot; MCP</span></div>
+          <div class="agent"><b>Codex</b><span>app-server thread</span></div>
+          <div class="agent"><b>Gemini</b><span>PTY</span></div>
+          <div class="agent"><b>OpenCode</b><span>PTY</span></div>
+          <div class="agent"><b>GPT-OSS</b><span>PTY via aider &middot; Groq</span></div>
+          <div class="agent"><b>Nemotron</b><span>PTY via aider &middot; OpenRouter</span></div>
+        </div>
+      </div>
+
+      <div class="box">
+        <div class="title">The safety loop</div>
+        <div class="owns">Every line an agent prints is read twice.</div>
+        <div class="note">
+          <span class="key">1. By pattern</span> &mdash; 23 regexes, in-process, no model call.
+          Catches a prompt waiting for a human, or a command expensive to undo.
+        </div>
+        <div class="note">
+          <span class="key">2. By the Supervisor</span> &mdash; batched, debounced 10s,
+          at most once per agent per 20s.
+        </div>
+        <div class="note">
+          A gate <span class="key">freezes the agent</span> until you answer.
+          The Supervisor can only <span class="key">propose</span>; every decision is
+          appended to <code>audit.jsonl</code>.
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow"><span class="glyph">&rarr;</span></div>
+
+    <!-- supervisor -->
+    <div class="col" style="flex:.92">
+      <div class="box aws">
+        <div class="title">Supervisor &mdash; AWS Strands Agents</div>
+        <div class="owns">
+          <code>Agent</code> + <code>tool()</code> &mdash; report_update, plan_action,
+          and four read-only tools.
+        </div>
+        <div class="chips">
+          <div class="chip a">BedrockModel</div>
+          <div class="chip a">AnthropicModel</div>
+        </div>
+        <div class="note">
+          One SDK, two providers. <code>SUPERVISOR_PROVIDER=auto</code> tries Bedrock, then
+          Anthropic &mdash; so losing a provider costs a provider, not the framework.
+        </div>
+        <div class="note">
+          <code>/api/health</code> reports <code>strands: true</code> and which one answered.
+        </div>
+      </div>
+
+      <div class="box">
+        <div class="title">On disk <span class="port">~/.conduit</span></div>
+        <div class="owns">Plain JSON and JSONL. No database.</div>
+        <div class="chips">
+          <div class="chip">project.json</div>
+          <div class="chip">groupchat.jsonl</div>
+          <div class="chip">audit.jsonl</div>
+          <div class="chip">wiki/</div>
+          <div class="chip">shared_content/</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><span class="sw" style="background:var(--web)"></span>Web server &mdash; relays, owns nothing</span>
+    <span><span class="sw" style="background:var(--daemon)"></span>Daemon &mdash; owns every agent process</span>
+    <span><span class="sw" style="background:var(--aws)"></span>AWS &mdash; Strands Agents, Bedrock, Nova Sonic</span>
+  </div>
+</div>

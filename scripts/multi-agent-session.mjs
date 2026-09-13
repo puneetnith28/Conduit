@@ -20,7 +20,26 @@ import { WebSocket } from 'ws';
 
 const BASE = process.env.CONDUIT_URL || 'http://localhost:3200';
 const AUTH = process.env.CONDUIT_AUTH || '';
-const CWD = process.argv[2] || path.join(os.tmpdir(), 'multi-agent-lab');
+const DEFAULT_LAB = path.join(os.tmpdir(), 'multi-agent-lab');
+const CWD = process.argv[2] || DEFAULT_LAB;
+
+// Start the fixture from nothing, but only when it *is* the fixture.
+//
+// One of the gates this suite checks is aider's start-up question, "create a
+// git repo?" — and aider only asks that in a directory that has none. The
+// first run creates the repo, so every run after it silently loses that
+// assertion, and the suite reports a failure that has nothing to do with the
+// code. The same goes for .aider chat history, which aider reads back on start.
+//
+// Never for a directory someone passed in: deleting a .git they own would be
+// unforgivable, and the argument exists so you can point this at a real tree.
+if (CWD === DEFAULT_LAB && fs.existsSync(CWD)) {
+  for (const name of fs.readdirSync(CWD)) {
+    if (name === '.git' || name.startsWith('.aider')) {
+      fs.rmSync(path.join(CWD, name), { recursive: true, force: true });
+    }
+  }
+}
 const CLIS = (process.env.MAS_CLIS || 'claude,gemini,gpt,nemotron').split(',');
 
 const headers = { 'Content-Type': 'application/json' };
@@ -28,6 +47,7 @@ if (AUTH) headers.Authorization = 'Basic ' + Buffer.from(AUTH).toString('base64'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0;
+let priorGateSettings = null;
 const failures = [];
 function ok(cond, name, extra) {
   if (cond) { pass++; console.log(`  ✓ ${name}`); }
@@ -94,6 +114,17 @@ try {
   if (p.status !== 201) throw new Error('cannot continue without a project');
   projectId = p.json.id;
   ok(!!(await waitFor((f) => f.type === 'org:changed', 5000)), 'org:changed broadcast to the UI');
+
+  // Hold the routine approvals for the length of this run.
+  //
+  // Conduit answers y/n prompts itself, and aider asks about the git repo
+  // within seconds of starting — so the one gate this fixture reliably
+  // produces was being raised, auto-approved and forgotten before the
+  // assertion below could see it. screenshots.mjs does exactly this, for
+  // exactly this reason. Restored in the finally, so an early exit cannot
+  // leave the user's own setting flipped.
+  priorGateSettings = (await api('GET', '/gate-settings')).json;
+  await api('PUT', '/gate-settings', { autoApproveRoutine: false });
 
   // ── 2. every agent type, started together ───────────────────────────
   console.log('\n  starting agents concurrently…');
@@ -192,8 +223,12 @@ try {
     const withGate = (await api('GET', `/projects/${projectId}/agents`)).json;
     ok(!!withGate.find((x) => x.id === regexGate.agentId)?.pendingGate, 'GET agents carries pendingGate');
     const res = await api('POST', `/projects/${projectId}/agents/${regexGate.agentId}/gate/resolve`, { decision: 'approve' });
-    ok(res.status === 200 && /sent y/i.test(String(res.json?.action || '')),
-      'approving answers the prompt with y', JSON.stringify(res.json));
+    // The action string is whatever gate-answer.ts describes the keystrokes as:
+    // "answered the prompt" for a y/n, "trusted the workspace" for Claude's
+    // arrow-key trust menu. It used to be the literal "sent y", which stopped
+    // being true once gates could be answered with something other than a key.
+    ok(res.status === 200 && !!String(res.json?.action || '').trim(),
+      'approving answers the prompt', JSON.stringify(res.json));
     ok(!!(await waitFor((f) => f.type === 'gate:resolved' && f.agentId === regexGate.agentId, 15_000)),
       'gate:resolved broadcast');
     const cleared = (await api('GET', `/projects/${projectId}/agents`)).json;
@@ -262,6 +297,11 @@ try {
   console.error('\n  ✗ aborted:', err);
 } finally {
   try { ws.close(); } catch { /* ignore */ }
+  if (priorGateSettings) {
+    await api('PUT', '/gate-settings', {
+      autoApproveRoutine: priorGateSettings.autoApproveRoutine !== false,
+    }).catch(() => { /* the server may already be gone */ });
+  }
   if (projectId) {
     const del = await api('DELETE', `/projects/${projectId}?removeData=true`).catch(() => ({ status: 0 }));
     ok(del.status === 204, 'project deleted, session cleaned up', `status ${del.status}`);

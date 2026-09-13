@@ -505,6 +505,21 @@ file.
 
 ---
 
+## Scripts
+
+Everything is a plain `npm run`. The ones you are most likely to want:
+
+| Command | Does |
+|---|---|
+| `npm run dev` | daemon + web + vite, on :5173 |
+| `npm run build && npm run start:all` | production, on :3200 |
+| `npm run seed:demo` | create a project and one agent per **installed** CLI, so a first run is not an empty screen |
+| `npm run demo:reset` | put a demo workspace back to its baseline between takes, including clearing aider's chat history |
+| `npm run icons` | regenerate every favicon, the in-app mark and the desktop icon from `client/public/conduit1.png` |
+| `npm run architecture` | re-render `architecture.png` from `scripts/architecture.html` |
+| `npm run check:bedrock` | tell the three Bedrock failure modes apart — missing IAM permission, a model the account never enabled, and a quota cap |
+| `npm run typecheck` | both tsconfigs, no emit |
+
 ## Configuration
 
 Copy `.env.example` to `.env`. Nothing is required locally.
