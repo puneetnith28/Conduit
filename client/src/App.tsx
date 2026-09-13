@@ -876,7 +876,8 @@ export default function App() {
     if (brainWorking) stopSpeaking();
   }, [brainWorking]);
 
-  const logoImg = '/conduit1.png?t=123456';
+  // 128px, not the 1254px source — this draws at brand-bar size.
+  const logoImg = '/logo-128.png?v=2';
 
   const [tourForceStart, setTourForceStart] = useState(false);
   const [isDownloadOpen, setIsDownloadOpen] = useState(false);
