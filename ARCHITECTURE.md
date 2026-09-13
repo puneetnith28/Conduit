@@ -1,264 +1,538 @@
-# Conduit System Architecture & Design Specification
+# Conduit — Architecture
 
-This document provides a comprehensive, production-grade technical overview of the **Conduit** multi-agent control center architecture. It details the runtime lifecycle, inter-process communication (IPC), terminal virtualization, Amazon Bedrock supervision, Model Context Protocol (MCP) inter-agent messaging, and human-in-the-loop safety gates.
+> **The one-page version is [`architecture.png`](architecture.png)**, rendered from
+> `scripts/architecture.html` by `npm run architecture`. This is the long form.
+>
+> Reference material lives in [`docs/`](docs/): the [API](docs/api.md),
+> [data model](docs/data-model.md), [agent runtime](docs/agent-runtime.md),
+> [security](docs/security.md), [UI](docs/ui.md), [deployment](docs/deployment.md),
+> [development](docs/development.md) and [environment](docs/environment.md).
+
+Conduit runs several coding CLIs in parallel, reads everything they print, and interrupts
+you only when something needs a human. It is a supervision layer, not an orchestrator: the
+human decides, and the machine's job is to make sure the right decision reaches them at the
+right moment.
 
 ---
 
-> **The one-page version is [`architecture.png`](architecture.png)**, rendered from
-> `scripts/architecture.html` by `npm run architecture`. This file is the long form:
-> the sequence diagrams, the storage layout and the verification matrix.
+## 1. Core Paradigm
 
-## 1. High-Level System Architecture
+Three ideas hold the design together.
 
-Conduit decouples the graphical user interface (Electron/Browser) from the long-running process manager (Conduit Daemon). This guarantees that terminal sessions, agent compilations, and git workflows never terminate if the frontend is refreshed, closed, or updated.
+**Agents scale; attention does not.** One person can start ten agents and read none of
+them. The bottleneck is not compute, it is the human's ability to notice. So Conduit reads
+the output instead, and surfaces only what changes a decision.
+
+**A gate is a decision, not a notification.** When something risky appears, the agent is
+frozen where it stands. Not warned afterwards, not logged for later — stopped, with its
+terminal in front of you, waiting. A notification you can scroll past is not a safety
+mechanism.
+
+**The supervisor proposes; the human disposes.** The Supervisor has exactly one write
+tool, and it creates a *proposal*. Nothing it decides reaches an agent without a human
+approving the exact text that would be sent.
+
+```mermaid
+flowchart LR
+    Agent[Agent prints a line] --> Read{Worth a human?}
+    Read -->|Routine noise| Drop[Dropped, never shown]
+    Read -->|Progress or a question| Chat[Group Chat, labelled]
+    Read -->|Risky| Freeze[Agent frozen, gate raised]
+    Freeze --> Human{Human decides}
+    Human -->|Approve| Continue[Keystrokes typed, agent continues]
+    Human -->|Reject| Interrupt[Escape sent, agent told to stop]
+    Human -->|Custom| Own[Your own words typed in]
+```
+
+---
+
+## 2. Architecture Topology
+
+Two processes. The split exists for one reason: **terminal sessions must outlive the user
+interface.** Refresh the browser, restart the web server, update the app — the agents keep
+working.
 
 ```mermaid
 graph TB
-    subgraph UI_Layer ["Presentation & Workspace Layer"]
-        ElectronApp["Electron Shell (Desktop App)"]
-        BrowserUI["Web Browser (React + Vite SPA)"]
+    subgraph Presentation
+        Browser[Browser - React and Vite SPA]
+        Desktop[Electron shell - bundles both servers]
     end
 
-    subgraph Server_Layer ["Conduit API & Hub Server (:3200)"]
-        ExpressServer["Express HTTP / REST API"]
-        WSServer["WebSocket Hub (:3200/ws)"]
-        StaticServer["Vite Static Asset Server"]
+    subgraph WebTier["Web server :3200"]
+        Express[Express REST API]
+        WSHub[WebSocket hub /ws]
+        VoiceWS[Voice socket /ws/voice]
+        Auth[Basic auth - HTTP and upgrade]
     end
 
-    subgraph Daemon_Layer ["Conduit Daemon Process (:3210)"]
-        DaemonCore["Daemon Engine (daemon.ts)"]
-        PTYManager["PTY Manager (node-pty)"]
-        HookServer["Hook Callback Server (HTTP /hook/:id/:event)"]
-        SupervisorWatcher["Supervisor Watcher (ANSI Stripper + Watchdog)"]
+    subgraph DaemonTier["Daemon :3210 loopback"]
+        Core[Daemon core]
+        PTY[PTY manager - node-pty]
+        CodexRT[Codex app-server client]
+        Status[Status engine]
+        Watcher[Supervisor watcher]
+        Keeper[The Keeper]
+        OrgAPI[/org/* HTTP API/]
+        Hooks[Hook callback server]
     end
 
-    subgraph Agents_Layer ["Active Subprocess Pool"]
-        AgentClaude["Claude Code (Interactive CLI)"]
-        AgentCodex["Codex CLI (App-Server)"]
-        AgentGemini["Gemini CLI (PTY Shell)"]
-        AgentOpenCode["OpenCode (PTY Shell)"]
-        AgentGpt["GPT-OSS via aider (PTY Shell, Groq)"]
-        AgentNemotron["Nemotron via aider (PTY Shell, OpenRouter)"]
+    subgraph Agents["Agent processes"]
+        AClaude[Claude Code]
+        ACodex[Codex]
+        AGemini[Gemini CLI]
+        AOpen[OpenCode]
+        AGpt[GPT-OSS via aider]
+        ANemo[Nemotron via aider]
     end
 
-    subgraph Storage_Layer ["Local Persistence (~/.conduit)"]
-        ProjectsJSON["project.json (per project: state & layout)"]
-        AuditLogs["supervisor-log.jsonl (Audit Trail)"]
-        WikiStore["Shared Content & Markdown Wiki"]
+    subgraph AWS["AWS"]
+        Strands[Strands Agents SDK]
+        Bedrock[Amazon Bedrock]
+        Nova[Nova Sonic - bidirectional speech]
     end
 
-    ElectronApp -->|IPC / HTTP| ExpressServer
-    BrowserUI -->|REST / WebSocket| ExpressServer
-    ExpressServer <-->|Internal WS / IPC| DaemonCore
-    DaemonCore --> PTYManager
-    DaemonCore -->|JSON-RPC over app-server| AgentCodex
-    PTYManager -->|Spawns Pseudo-Terminals| AgentClaude
-    PTYManager -->|Spawns Pseudo-Terminals| AgentGemini
-    PTYManager -->|Spawns Pseudo-Terminals| AgentOpenCode
-    PTYManager -->|Spawns Pseudo-Terminals| AgentGpt
-    PTYManager -->|Spawns Pseudo-Terminals| AgentNemotron
-    AgentClaude -->|Lifecycle HTTP Hooks| HookServer
-    HookServer --> DaemonCore
-    DaemonCore <--> Storage_Layer
-    SupervisorWatcher -.->|Observe stdout| PTYManager
+    subgraph Disk["~/.conduit"]
+        State[project.json per project]
+        Logs[groupchat.jsonl and audit.jsonl]
+        Memory[wiki/ and shared_content/]
+    end
+
+    Browser -->|REST and WebSocket| Express
+    Desktop -->|same origin, bundled| Express
+    Express --> Auth
+    Express <-->|internal WebSocket| Core
+    WSHub <-->|relayed frames| Core
+    VoiceWS <-->|PCM16 audio| Nova
+
+    Core --> PTY
+    Core --> CodexRT
+    Core --> Status
+    Core --> Keeper
+    Core --> OrgAPI
+    PTY --> AClaude
+    PTY --> AGemini
+    PTY --> AOpen
+    PTY --> AGpt
+    PTY --> ANemo
+    CodexRT -->|JSON-RPC| ACodex
+
+    AClaude -.->|lifecycle hooks| Hooks
+    ACodex -.->|structured events| CodexRT
+    Hooks --> Status
+
+    PTY -.->|stdout stream| Watcher
+    Watcher --> Strands
+    Strands --> Bedrock
+    Core <--> Disk
 ```
 
-### Architectural Highlights:
-1. **Daemon Survivability**: The daemon runs on `127.0.0.1:3210`. If the web server or Electron UI restarts, all agent sub-shells continue running without dropping state.
-2. **Dual-Channel Protocol**: The frontend connects to the server via WebSocket for sub-10ms xterm.js streaming and state broadcasts, and uses REST for project CRUD and configuration.
-3. **Zero External Dependencies**: All state is persisted locally in `~/.conduit` (JSON and JSONL), ensuring offline capability and zero third-party database overhead.
+Solid arrows are synchronous calls. Dotted arrows are things the agents emit on their own
+schedule.
+
+**What the web server is not.** It owns no agent processes. Every operation that touches an
+agent is relayed to the daemon over a local WebSocket (`src/daemon/protocol.ts`) which
+reconnects on its own. This is the invariant the whole design rests on, and the one most
+easily broken by adding a convenient `spawn` in a route handler.
 
 ---
 
-## 2. Process Lifecycle & Terminal Virtualization (PTY Engine)
+## 3. Components Deep Dive
 
-Conduit virtualizes terminals using native C++ bindings (`node-pty`) connected via streaming WebSocket multiplexers to browser xterm.js instances.
+### 3.1 Web server — `src/server.ts`
+
+Serves the React bundle, exposes REST (`src/routes.ts`), terminates the browser WebSocket,
+and proxies voice audio. It holds **no durable state**: everything it knows, it asked the
+daemon for.
+
+`CONDUIT_AUTH=user:pass` puts Basic auth in front of HTTP *and* the WebSocket upgrade,
+compared in constant time.
+
+### 3.2 Daemon — `src/daemon/daemon.ts`
+
+Owns every agent process and everything derived from watching them. Also hosts:
+
+- the **hook callback server**, which Claude Code posts lifecycle events to
+- the **`/org/*` HTTP API**, which the Keeper and the voice tools drive
+- the **status engine**, which is the only writer of an agent's `status`
+
+`src/daemon/runtime.ts` routes each operation to the right runtime, so the rest of the
+daemon never knows whether it is talking to a terminal or a JSON-RPC thread.
+
+### 3.3 Agent runtimes
+
+Two, not six. `src/cli-registry.ts` is the single source of truth for which id maps to
+which binary, install command and required environment.
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    actor Dev as Software Engineer
-    participant WebUI as UI / Terminal.tsx (xterm.js)
-    participant Hub as Web Server (:3200)
-    participant Daemon as Daemon (:3210)
-    participant PTY as node-pty Subprocess
-    participant Shell as Agent CLI (Claude / Codex)
+graph LR
+    Runtime[runtime.ts] -->|five of six| PTYPath[PTY manager]
+    Runtime -->|codex only| RPCPath[app-server client]
 
-    Dev->>WebUI: Click "Start Agent" / Input Prompt
-    WebUI->>Hub: POST /api/projects/:id/agents/:agentId/start
-    Hub->>Daemon: WS Request: { type: "agent:start", agentId }
-    Daemon->>PTY: spawn(shell, [args], { cwd, env })
-    PTY->>Shell: Exec CLI with MCP and Hook flags
-    Daemon-->>Hub: WS Broadcast: { type: "agent:status", status: "running" }
-    Hub-->>WebUI: Status Indicator updates to green
+    PTYPath --> Term[Real pseudo-terminal]
+    Term --> Buffer[Output buffer for replay]
+    Term --> Keys[Raw keystroke input]
 
-    loop Real-time Output Streaming
-        Shell->>PTY: stdout / stderr chunk
-        PTY->>Daemon: onData(chunk)
-        Daemon->>Daemon: Append to in-memory scrollback buffer (1MB)
-        Daemon->>Hub: WS Message: { type: "agent:output", data: chunk }
-        Hub->>WebUI: Direct WebSocket stream
-        WebUI->>Dev: xterm.js renders terminal output
-    end
-
-    opt Late Client Reconnect
-        WebUI->>Hub: WS Connect: attach to agentId
-        Hub->>Daemon: Request replay
-        Daemon-->>WebUI: Replay cached scrollback buffer
-    end
+    RPCPath --> Thread[codex app-server thread]
+    Thread --> Items[Structured items: tool calls, diffs, reasoning]
 ```
 
-### Key Technical Details:
-- **Scrollback Replay Buffer**: The daemon retains an in-memory ring buffer of the last 1MB of terminal output per agent. Late reconnects or tab switches instantly replay the terminal state without waiting for a new process event.
-- **PTY Environment Sanitization**: Each PTY shell is injected with custom `CONDUIT_PROJECT_ID`, `CONDUIT_AGENT_ID`, and session-scoped MCP configurations.
+A PTY agent is genuinely interactive — you can click into it and type, and Conduit is just
+another writer on the same terminal. Codex is not a terminal at all; its structured items
+render as a transcript.
 
----
+Output is buffered so that a browser attaching *after* an agent started gets a replay
+rather than a blank pane. A browser that attaches before the agent runs is remembered
+(`clientWanted`) and bound when it starts.
 
-## 3. Human-in-the-Loop Safety Loop & Approval Gate
+Full detail: [`docs/agent-runtime.md`](docs/agent-runtime.md).
 
-Conduit protects codebases from destructive autonomous actions through a dual-layer watchdog architecture combining **zero-latency regex pattern matching** with **Amazon Bedrock AI classification**.
+### 3.4 The Supervisor — `src/strands/`
+
+A Strands agent: `Agent` + `tool()` from `@strands-agents/sdk`, with `report_update` and
+`plan_action` plus four read-only tools. What changes between providers is only the model
+object handed to it.
 
 ```mermaid
 flowchart TD
-    Stdout["Agent Terminal stdout Stream"] --> Strip["Strip ANSI Codes & Escape Sequences"]
-    Strip --> FastPath{"Fast-Path Pattern Matcher"}
-
-    FastPath -->|Matches rm -rf, git push force, DROP TABLE| TriggerGate["Trigger Critical Approval Gate"]
-    FastPath -->|Matches y/N prompts or confirm question| TriggerPromptGate["Trigger Interactive Prompt Gate"]
-    FastPath -->|No high-risk pattern detected| BatchBuffer["Debounce Buffer: 10s Window"]
-
-    BatchBuffer --> SlowPath["Supervisor: AWS Strands Agent"]
-    SlowPath -.->|BedrockModel, first choice| Bedrock["Amazon Bedrock"]
-    SlowPath -.->|AnthropicModel, when Bedrock cannot serve| Anthropic["Anthropic API"]
-    SlowPath --> BedrockCheck{"Classify Output Stream"}
-
-    BedrockCheck -->|Destructive Intent Detected| TriggerGate
-    BedrockCheck -->|Blocker or Build Error| PostGroupChat["Post Warning in Universal Group Chat"]
-    BedrockCheck -->|Normal Engineering Progress| UpdateTelemetry["Update Living Activity Telemetry"]
-
-    TriggerGate --> PauseAgent["Send SIGSTOP / Freeze PTY Ingestion"]
-    PauseAgent --> SurfaceModal["Surface Urgent Gate Modal in UI"]
-
-    SurfaceModal --> Decision{"Human Decision"}
-    Decision -->|Reject| KillCommand["Send Ctrl+C to Agent PTY"]
-    Decision -->|Approve with Lease| ResumeLease["Inject --force-with-lease flag and Resume"]
-    Decision -->|Standard Approve| ResumeAgent["Unfreeze PTY & Resume Execution"]
-
-    KillCommand --> LogAudit["Write to ~/.conduit/supervisor-log.jsonl"]
-    ResumeLease --> LogAudit
-    ResumeAgent --> LogAudit
+    Classify[Classify this batch] --> Provider{SUPERVISOR_PROVIDER}
+    Provider -->|bedrock| B[Strands + BedrockModel]
+    Provider -->|anthropic| A[Strands + AnthropicModel]
+    Provider -->|auto, the default| B2[Strands + BedrockModel]
+    B2 -->|works| Done[Classification returned]
+    B2 -->|cannot serve| Ladder[Strands + AnthropicModel]
+    Ladder -->|rate limited| Step[Step down the model ladder]
+    Step --> Ladder
+    Ladder -->|works| Done
+    Ladder -->|SDK unavailable| Raw[Hand-rolled Messages API]
+    Raw --> Done
+    B --> Done
+    A --> Done
 ```
 
-### Safety Engine Guarantees:
-1. **Zero Execution Before Veto**: When a destructive pattern is detected, the daemon halts keystroke input to the PTY before the command executes.
-2. **Audit Accountability**: All decisions, whether human-approved or human-rejected, are written immutably to `supervisor-log.jsonl` with timestamps and commit SHAs.
+Both branches run through the SDK. That matters more than it sounds: a fallback that
+bypassed the framework would mean the framework was absent exactly when the primary
+provider was down, which is when you are most likely to be looking. A new AWS account is
+capped near 10,000 Bedrock tokens a day until its quota is raised, so this is the common
+case, not the edge case.
+
+The ladder exists because a Claude Code subscription token is routinely refused on the
+larger models and allowed on Haiku. A 429 on the top rung steps down rather than giving up.
+
+`GET /api/health` reports `supervisorHealth.strands` — whether the last good classification
+actually went through the SDK. *"The Supervisor works"* and *"the Supervisor works as a
+Strands agent"* are different claims.
+
+### 3.5 The Keeper — `src/daemon/orchestrator.ts`
+
+An org-level agent, backed by `codex exec` or `claude -p`, with twelve MCP tools
+(`src/conduit-mcp-server.ts`) covering every project rather than one. It answers "what is
+running and what is blocked" without you opening a single terminal.
+
+Its private state lives in `~/.conduit/brain-private`, deliberately outside any project
+working directory — it used to live in its own cwd, where it would read its own history and
+answer questions about projects you had deleted.
+
+### 3.6 Voice — `src/voice/`
+
+Amazon Nova Sonic over `InvokeModelWithBidirectionalStream`. The browser captures PCM16
+through an AudioWorklet, gated by a VAD so the socket stays open but audio only flows above
+the threshold. AWS credentials never leave Node.
+
+Eight tools, of which two can do damage. See §6.2.
 
 ---
 
-## 3a. The Supervisor, and which provider serves it
+## 4. Execution Flows
 
-The Supervisor is a Strands agent: `Agent` + `tool()` from `@strands-agents/sdk`, with
-`report_update` and `plan_action` as its tools plus four read-only ones. What changes
-between providers is only the model object handed to it.
-
-| `SUPERVISOR_PROVIDER` | Behaviour |
-|---|---|
-| `bedrock` | `BedrockModel` only |
-| `anthropic` | `AnthropicModel` only |
-| `auto` (default) | Bedrock first; Anthropic when Bedrock cannot serve the request |
-
-Both run through the SDK, so losing a provider costs a provider rather than the
-framework. That matters on a new AWS account, where Bedrock is capped near 10,000
-tokens a day until the quota is raised — before this, the fallback called the Messages
-API by hand and the SDK dropped out of the running system exactly when Bedrock was
-unavailable.
-
-`GET /api/health` reports `supervisorHealth`:
-
-```json
-{ "state": "ok", "provider": "bedrock", "model": "us.anthropic...", "strands": true }
-```
-
-`strands` is whether the last good classification actually went through the SDK.
-"The Supervisor works" and "the Supervisor works as a Strands agent" are different
-claims, and only one of them is the one this project makes.
-
-Beneath both sits a hand-rolled Messages API call, used only if the optional
-`@anthropic-ai/sdk` peer is missing at runtime or the SDK path fails outright.
-
-## 4. MCP Inter-Agent Autonomous Communication
-
-Agents running concurrently within a project communicate and discover each other peer-to-peer using the **Model Context Protocol (MCP)** specification.
+### 4.1 Starting an agent
 
 ```mermaid
 sequenceDiagram
-    autonumber
-    participant AgentA as Agent Alpha (Frontend - Claude Code)
-    participant LocalMCPA as Session MCP Server A (stdio)
-    participant ConduitHub as Conduit Daemon / Hub (:3200)
-    participant LocalMCPB as Session MCP Server B (stdio)
-    participant AgentB as Agent Beta (Backend - Codex)
+    participant U as You
+    participant W as Web server
+    participant D as Daemon
+    participant R as Registry
+    participant P as PTY manager
+    participant A as Agent
 
-    AgentA->>LocalMCPA: Call MCP Tool: list_teammates()
-    LocalMCPA->>ConduitHub: HTTP GET /api/projects/:id/teammates
-    ConduitHub-->>LocalMCPA: 200 OK: [{ name: "Backend", cli: "codex", status: "running" }]
-    LocalMCPA-->>AgentA: Return available teammates
-
-    AgentA->>LocalMCPA: Call MCP Tool: message_agent(target="Backend", message="Token schema updated")
-    LocalMCPA->>ConduitHub: HTTP POST /api/projects/:id/messages
-    ConduitHub->>ConduitHub: Append to Project Group Chat & Activity Feed
-    ConduitHub->>LocalMCPB: Route packet to Agent B session pipe
-    LocalMCPB->>AgentB: Inject formatted teammate broadcast into terminal input
-    AgentB-->>ConduitHub: Acknowledge receipt
-    ConduitHub-->>AgentA: Message Delivered Confirmation
+    U->>W: POST /agents/:id/start
+    W->>D: relay start
+    D->>R: which binary, which env?
+    R-->>D: binary + required vars
+    D->>D: preflight - on PATH? vars set?
+    alt missing
+        D-->>W: 400 with the install command
+        W-->>U: error naming the exact command
+    else present
+        D->>P: spawn with project dirs and MCP config
+        P->>A: pseudo-terminal
+        A-->>P: first bytes
+        P-->>D: buffer + stream
+        D-->>W: agent:status running
+        W-->>U: terminal begins painting
+    end
 ```
 
-### MCP Infrastructure Details:
-- **Session Isolation**: Each agent gets a dedicated JSON-RPC stdio server configured automatically in its working directory (`.claude.json` / `codex.json`).
-- **No Shared Network Ports**: Agents communicate exclusively through Conduit's local IPC hub, eliminating rogue socket exposure.
+The preflight is why a missing CLI fails immediately with the command that installs it,
+rather than opening a terminal that lands in a shell and looks alive.
 
----
+### 4.2 The safety loop
 
-## 5. Storage & State Persistence Architecture
-
-Conduit operates as a local-first system with a deterministic filesystem layout under `~/.conduit/`.
+Every line is read twice. The fast path never waits on a network round trip, because a
+destructive command must not.
 
 ```mermaid
-graph TD
-    subgraph RootDir ["~/.conduit/ (Root Storage Directory)"]
-        ProjectsConfig["projects.json (Project Definitions, Window Layouts, Agent Configs)"]
-        SupervisorAudit["supervisor-log.jsonl (Gate Audit Trail, Bedrock Telemetry Classifications)"]
-        
-        subgraph ProjectSubdirs ["projects/{projectId}/"]
-            SharedContent["shared_content/ (Cross-agent specs, schema definitions, shared code)"]
-            ProjectWiki["wiki/ (_index.md, Architecture markdown, living project docs)"]
-            AgentLogs["logs/ (Session replay dumps, agent output logs)"]
-        end
-    end
+flowchart TD
+    Out[Agent stdout] --> Strip[Strip ANSI and escape sequences]
+    Strip --> Fast{23 regexes, in-process}
 
-    Engine["Conduit Storage Engine (storage.ts)"] --> ProjectsConfig
-    Engine --> SupervisorAudit
-    Engine --> SharedContent
-    Engine --> ProjectWiki
-    Engine --> AgentLogs
+    Fast -->|rm -rf, DROP TABLE, force push| Risky[Raise gate immediately]
+    Fast -->|y/N, Y/N, confirm prompt| Settle[Wait 400ms for the terminal to go quiet]
+    Fast -->|nothing matched| Batch[Debounce buffer, 10s]
+
+    Settle --> Still{Still a prompt?}
+    Still -->|yes| Known{Answer known?}
+    Still -->|no, it scrolled past| Batch
+    Known -->|trust prompt, routine y/N| Auto[Type the answer]
+    Known -->|no| PromptGate[Raise gate]
+
+    Batch --> Throttle[At most once per agent per 20s]
+    Throttle --> Sup[Supervisor - Strands agent]
+    Sup --> Class{Classification}
+    Class -->|noise| Dropped[Dropped, never broadcast]
+    Class -->|progress, question, blocker| Post[Group Chat, labelled]
+    Class -->|risky_action| Risky
 ```
 
-### State Storage Specifications:
-| Entity | Location | Serialization | Concurrency Strategy |
-| :--- | :--- | :--- | :--- |
-| **Projects & Agents** | `~/.conduit/projects.json` | JSON | Atomic write via tempfile rename |
-| **Audit Logs** | `~/.conduit/supervisor-log.jsonl` | Append-only JSONL | Synchronous stream append |
-| **Project Wiki** | `~/.conduit/projects/:id/wiki/` | Markdown (`.md`) | File-system watch via `chokidar` |
-| **Shared Content** | `~/.conduit/projects/:id/shared/` | Plain text / Code | Path-traversal sanitized filesystem API |
+The 400ms settle window matters: a `[y/N]` that appears in scrolling output is not a prompt
+waiting for you, it is text. Matching it eagerly typed characters into a terminal that was
+not asking anything.
+
+### 4.3 Resolving a gate
+
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant D as Daemon
+    participant W as Web server
+    participant U as You
+    participant L as audit.jsonl
+
+    A-->>D: risky output
+    D->>D: set pendingGate, freeze
+    D-->>W: gate:triggered
+    W-->>U: modal, terminal brought forward
+
+    Note over D: /org/inject now refuses<br/>a message here would become<br/>the answer to this prompt
+
+    U->>W: POST gate/resolve
+    W->>D: gate-resolve.ts - the one implementation
+    alt approve
+        D->>A: keystrokes, with measured delays
+    else reject
+        D->>A: Escape, then "stop"
+    else custom
+        D->>A: your own text
+    end
+    D->>L: append the decision
+    D-->>W: gate:resolved
+    W-->>U: modal closes, agent resumes or stops
+```
+
+Resolution has exactly one implementation. Two copies would drift, and the half that
+drifts is the one answering a destructive prompt.
+
+### 4.4 A plan
+
+```mermaid
+sequenceDiagram
+    participant S as Supervisor
+    participant D as Daemon
+    participant U as You
+    participant A as Target agent
+    participant L as audit.jsonl
+
+    S->>D: plan_action - description + exact message
+    D->>D: store pending plan in project.json
+    D-->>U: plan:created
+    Note over U: You see the exact text<br/>that would be sent
+    alt approve
+        U->>D: resolve approve
+        D->>A: inject the message verbatim
+    else reject
+        U->>D: resolve reject + reason
+        Note over S: Rejected plans are included in<br/>later context, so it does not<br/>re-propose what you refused
+    end
+    D->>L: append the decision
+    D-->>U: plan:resolved
+```
+
+### 4.5 Approving by voice
+
+The only place a mishearing could start something destructive, so the checks are on the
+server, not in the prompt.
+
+```mermaid
+sequenceDiagram
+    participant U as You
+    participant N as Nova Sonic
+    participant G as approval-guard.ts
+    participant D as Daemon
+
+    N->>U: reads the command aloud - describe_gate
+    U->>N: "yes"
+    N->>G: resolve_gate approve
+    G->>G: 1 described? 2 under 60s? 3 said "approve"? 4 gate unchanged?
+    G-->>N: refused - a bare yes is not enough
+    N->>U: "Say approve it out loud and I will."
+    U->>N: "approve it"
+    N->>G: resolve_gate approve
+    G->>G: all four hold
+    G->>D: gate-resolve.ts, same path as the UI
+    D-->>U: agent continues, transcript written to audit.jsonl
+```
+
+Rejecting needs none of this. Stopping something is always safe.
 
 ---
 
-## 6. End-to-End Verification Matrix
+## 5. State & Persistence
 
-| Subsystem | Test Command | Coverage Area | Status |
+No database. Plain JSON and JSONL, readable with `cat`, which is the point — when something
+is wrong you can see it.
+
+```mermaid
+graph TB
+    subgraph Global["~/.conduit"]
+        Env[.env - the only config the desktop app sees]
+        Keys[api-keys.json - voice providers]
+        SupLog[supervisor-log.jsonl - every classification]
+        Brain[brain-private/ - Keeper state, outside any cwd]
+    end
+
+    subgraph PerProject["projects/id/"]
+        Proj[project.json - project, agents, pending plans]
+        Chat[groupchat.jsonl]
+        Audit[audit.jsonl - every decision you made]
+    end
+
+    subgraph Shared["Named by project, moved on rename"]
+        Wiki[wiki/name/ - long-term memory]
+        Content[shared_content/name/ - file handoff]
+    end
+
+    Proj -.->|two processes write this| Lock[Lock: fs.openSync wx]
+```
+
+The agent status machine, derived live and never written by hand:
+
+```mermaid
+stateDiagram-v2
+    [*] --> stopped
+    stopped --> running: start
+    running --> awaiting_input: finished a turn or asked something
+    awaiting_input --> idle: no attention for a while
+    idle --> running: a message arrives
+    awaiting_input --> running: a message arrives
+    running --> stopped: stop or exit
+    awaiting_input --> stopped: stop
+    idle --> stopped: stop
+
+    note right of awaiting_input
+        Ready states, not stuck states.
+        This is exactly when you send
+        the next instruction.
+        Only a pendingGate means blocked.
+    end note
+```
+
+`project.json` is written by two processes. `mutateProjectData` takes a lock with
+`fs.openSync(file, 'wx')` — atomic create, fails if it exists — around read-modify-write.
+Measured at two processes × 150 writes: **0 lost out of 300**, file valid JSON at every
+read, never observed empty.
+
+The lock deliberately does **not** call `ensureDir`. It did once, and that recreated the
+directory of a project you had just deleted.
+
+Full schema: [`docs/data-model.md`](docs/data-model.md).
+
+---
+
+## 6. Security & Observability
+
+### 6.1 What is protected
+
+`CONDUIT_AUTH` covers HTTP and the WebSocket upgrade. Paths from user input never reach
+`path.join` — `storage.resolveInside` resolves then asserts containment. Everything
+rendered from model or agent text goes through DOMPurify. `GET /api/voice/config` returns
+booleans, never keys.
+
+### 6.2 The asymmetry in voice
+
+```mermaid
+flowchart LR
+    Speech[Spoken command] --> Path{Which voice path?}
+    Path -->|Pipeline - the default| Router[voiceRouting.ts]
+    Path -->|Live - Nova Sonic| Guard[approval-guard.ts]
+
+    Router --> RejectP[reject: allowed]
+    Router --> ApproveP[approve: NO SUCH ACTION in the type]
+    ApproveP --> Refuse[Spoken refusal]
+
+    Guard --> RejectL[reject: allowed, no checks]
+    Guard --> Four{Four conditions}
+    Four -->|all hold| Allow[Approve, transcript to audit.jsonl]
+    Four -->|any missing| Deny[Spoken refusal naming which]
+```
+
+On the pipeline path approving is not disabled, it is **absent** — there is no approve
+action in the router's union, so no transcript can produce one, and the unit tests assert
+it. That path sees one sentence with no memory of what was read out; there is nothing it
+could check.
+
+### 6.3 What is deliberately not protected
+
+The daemon's `/org/*` endpoints are **unauthenticated on loopback**. Any local process —
+including an agent Conduit is running — can drive any agent through them, bypassing gates
+and plan approval. A deliberate trade for a single-user local tool, and the wrong trade on
+a shared machine.
+
+Gates catch *patterns*. They are a seatbelt, not a sandbox.
+
+Full treatment: [`docs/security.md`](docs/security.md).
+
+### 6.4 Observability
+
+| Signal | Where |
+|---|---|
+| `supervisorHealth` | `GET /api/health` — state, provider, model, `strands` |
+| Daemon reachability | `GET /api/daemon/status` |
+| Every classification | `~/.conduit/supervisor-log.jsonl` |
+| Every decision you made | `audit.jsonl`, per project |
+| Live UI events | `activity`, `org:changed`, `supervisor:update` on `/ws` |
+
+---
+
+## 7. Verification Matrix
+
+Every claim above has a script behind it. No test framework — each prints what it checked
+and exits non-zero.
+
+| Subsystem | Command | Covers | Result |
 | :--- | :--- | :--- | :--- |
-| **Safety Gates** | `npm test` | Regex fast path, ANSI stripping, destructive command traps | 19 / 19 Passed |
-| **Core End-to-End** | `npm run smoke` | WebSocket hub, PTY dispatch, Project Wiki, MCP routing | 51 / 51 Passed |
-| **Static Types** | `npm run typecheck` | Strict TypeScript across client, server, and daemon | 0 Errors |
-| **Client Bundler** | `npm run build:client` | Production Vite minification & rollup chunking | 0 Errors |
-| **Desktop Packaging** | `npm run build:desktop` | Electron packaging, Windows NSIS installer | Ready |
+| Gate patterns, policy, voice routing, approval guard, storage concurrency | `npm test` | 11 suites, no network | 292 passed |
+| End to end | `npm run smoke` | REST, WebSocket, PTY dispatch, wiki, MCP routing | 61 passed |
+| Every control | `npm run check:ui` | Buttons, routes, and every write read back through a different route | Clean |
+| Layout | `npm run check:layout` | 11 surfaces × 4 widths: overflow, clipping, overlap, contrast, tap targets | No defects |
+| Real browser | `npm run browser-check` | Interaction, asserts no uncaught exceptions | Clean |
+| Org API | `npm run check:org` | Every `/org/*` endpoint the Keeper uses | Clean |
+| Lifecycle | `npm run check:lifecycle` | Deleting a project mid-flight, restarting the daemon | Clean |
+| Abuse | `npm run check:abuse` | Traversal, absurd input — no 5xx, no dropped connections | Clean |
+| Agent types | `npm run check:agents` | One of every CLI | 6 / 6 |
+| Concurrency | `npm run check:multi` | Four agents at once, gates, group chat, MCP | 26 / 26 |
+| The Keeper | `npm run check:keeper` | Answers with working tools | Clean |
+| Live voice | `npm run check:voice-live` | Wake, tool call, audio back | 659 ms |
+| Packaged app | `npm run check:desktop` | Own daemon, all agent types, Bedrock parity, no orphans | 31 / 31 |
+| Bedrock | `npm run check:bedrock` | Distinguishes IAM, entitlement and quota failures | Diagnostic |
+| Types | `npm run typecheck` | Strict TypeScript, client and server | 0 errors |

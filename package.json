@@ -49,7 +49,8 @@
     "seed:demo": "node scripts/seed-demo.mjs",
     "icons": "node scripts/make-icons.mjs",
     "demo:reset": "node scripts/demo-reset.mjs",
-    "architecture": "node scripts/make-architecture.mjs"
+    "architecture": "node scripts/make-architecture.mjs",
+    "check:mermaid": "node scripts/check-mermaid.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.109.1",
