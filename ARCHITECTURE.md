@@ -4,6 +4,10 @@ This document provides a comprehensive, production-grade technical overview of t
 
 ---
 
+> **The one-page version is [`architecture.png`](architecture.png)**, rendered from
+> `scripts/architecture.html` by `npm run architecture`. This file is the long form:
+> the sequence diagrams, the storage layout and the verification matrix.
+
 ## 1. High-Level System Architecture
 
 Conduit decouples the graphical user interface (Electron/Browser) from the long-running process manager (Conduit Daemon). This guarantees that terminal sessions, agent compilations, and git workflows never terminate if the frontend is refreshed, closed, or updated.
@@ -38,7 +42,7 @@ graph TB
     end
 
     subgraph Storage_Layer ["Local Persistence (~/.conduit)"]
-        ProjectsJSON["projects.json (State & Layouts)"]
+        ProjectsJSON["project.json (per project: state & layout)"]
         AuditLogs["supervisor-log.jsonl (Audit Trail)"]
         WikiStore["Shared Content & Markdown Wiki"]
     end
@@ -47,8 +51,8 @@ graph TB
     BrowserUI -->|REST / WebSocket| ExpressServer
     ExpressServer <-->|Internal WS / IPC| DaemonCore
     DaemonCore --> PTYManager
+    DaemonCore -->|JSON-RPC over app-server| AgentCodex
     PTYManager -->|Spawns Pseudo-Terminals| AgentClaude
-    PTYManager -->|Spawns Pseudo-Terminals| AgentCodex
     PTYManager -->|Spawns Pseudo-Terminals| AgentGemini
     PTYManager -->|Spawns Pseudo-Terminals| AgentOpenCode
     PTYManager -->|Spawns Pseudo-Terminals| AgentGpt
@@ -123,7 +127,9 @@ flowchart TD
     FastPath -->|Matches y/N prompts or confirm question| TriggerPromptGate["Trigger Interactive Prompt Gate"]
     FastPath -->|No high-risk pattern detected| BatchBuffer["Debounce Buffer: 10s Window"]
 
-    BatchBuffer --> SlowPath["Amazon Bedrock Strands Supervisor"]
+    BatchBuffer --> SlowPath["Supervisor: AWS Strands Agent"]
+    SlowPath -.->|BedrockModel, first choice| Bedrock["Amazon Bedrock"]
+    SlowPath -.->|AnthropicModel, when Bedrock cannot serve| Anthropic["Anthropic API"]
     SlowPath --> BedrockCheck{"Classify Output Stream"}
 
     BedrockCheck -->|Destructive Intent Detected| TriggerGate
@@ -148,6 +154,37 @@ flowchart TD
 2. **Audit Accountability**: All decisions, whether human-approved or human-rejected, are written immutably to `supervisor-log.jsonl` with timestamps and commit SHAs.
 
 ---
+
+## 3a. The Supervisor, and which provider serves it
+
+The Supervisor is a Strands agent: `Agent` + `tool()` from `@strands-agents/sdk`, with
+`report_update` and `plan_action` as its tools plus four read-only ones. What changes
+between providers is only the model object handed to it.
+
+| `SUPERVISOR_PROVIDER` | Behaviour |
+|---|---|
+| `bedrock` | `BedrockModel` only |
+| `anthropic` | `AnthropicModel` only |
+| `auto` (default) | Bedrock first; Anthropic when Bedrock cannot serve the request |
+
+Both run through the SDK, so losing a provider costs a provider rather than the
+framework. That matters on a new AWS account, where Bedrock is capped near 10,000
+tokens a day until the quota is raised — before this, the fallback called the Messages
+API by hand and the SDK dropped out of the running system exactly when Bedrock was
+unavailable.
+
+`GET /api/health` reports `supervisorHealth`:
+
+```json
+{ "state": "ok", "provider": "bedrock", "model": "us.anthropic...", "strands": true }
+```
+
+`strands` is whether the last good classification actually went through the SDK.
+"The Supervisor works" and "the Supervisor works as a Strands agent" are different
+claims, and only one of them is the one this project makes.
+
+Beneath both sits a hand-rolled Messages API call, used only if the optional
+`@anthropic-ai/sdk` peer is missing at runtime or the SDK path fails outright.
 
 ## 4. MCP Inter-Agent Autonomous Communication
 

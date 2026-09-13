@@ -3,216 +3,187 @@
 <title>Conduit architecture</title>
 <style>
   :root {
-    --ink: #0d1117;
-    --line: #8b949e;
-    --text: #e6edf3;
-    --muted: #9aa4b2;
-    --box: #161b22;
-    --edge: #30363d;
-    --web: #58a6ff;
-    --daemon: #d29922;
-    --aws: #ff9900;
-    --danger: #f85149;
-    --ok: #3fb950;
+    --bg:    #faf8f5;
+    --card:  #ffffff;
+    --line:  #d9d3c8;
+    --ink:   #0f0f11;
+    --muted: #6b6b75;
+    --web:   #2563eb;
+    --daemon:#c2410c;
+    --aws:   #ff9900;
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; background: var(--ink); color: var(--text);
-    font: 14px/1.35 'Segoe UI', system-ui, -apple-system, sans-serif;
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.4 'Segoe UI', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
-  #sheet { width: 1500px; padding: 34px 38px 30px; }
+  #sheet { width: 1180px; padding: 38px 44px 34px; }
 
-  h1 { font-size: 22px; margin: 0 0 2px; letter-spacing: -.2px; }
-  .sub { color: var(--muted); font-size: 13px; margin: 0 0 22px; }
+  h1 { font-size: 25px; margin: 0 0 4px; letter-spacing: -.4px; }
+  .sub { color: var(--muted); font-size: 14.5px; margin: 0 0 26px; }
 
-  .row { display: flex; gap: 18px; align-items: stretch; }
-  .col { display: flex; flex-direction: column; gap: 14px; }
-
-  .box {
-    background: var(--box); border: 1.5px solid var(--edge);
-    border-radius: 10px; padding: 12px 14px;
+  .card {
+    background: var(--card); border: 2px solid var(--line);
+    border-radius: 14px; padding: 16px 20px;
   }
-  .box.web    { border-color: var(--web); }
-  .box.daemon { border-color: var(--daemon); }
-  .box.aws    { border-color: var(--aws); }
+  .card.web    { border-color: var(--web); }
+  .card.daemon { border-color: var(--daemon); }
+  .card.aws    { border-color: var(--aws); }
 
-  .title { font-weight: 650; font-size: 15px; display: flex; align-items: baseline; gap: 8px; }
-  .title .port { font-weight: 400; font-size: 12px; color: var(--muted); }
-  .owns { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
-
-  .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
-  .chip {
-    border: 1px solid var(--edge); border-radius: 6px;
-    padding: 5px 9px; font-size: 12px; background: #0f141b; white-space: nowrap;
+  .head { display: flex; align-items: center; gap: 10px; }
+  .head h2 { font-size: 17px; margin: 0; font-weight: 650; }
+  .head .tag {
+    font-size: 12px; color: var(--muted); font-weight: 500;
+    border: 1px solid var(--line); border-radius: 20px; padding: 2px 10px;
   }
-  .chip.b { border-color: var(--web); }
-  .chip.d { border-color: var(--daemon); }
-  .chip.a { border-color: var(--aws); }
+  .said { color: var(--muted); font-size: 13.5px; margin-top: 5px; }
 
-  .agents { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 10px; }
-  .agent {
-    border: 1px solid var(--edge); border-radius: 6px; padding: 6px 8px;
-    font-size: 11.5px; background: #0f141b;
+  .flow { display: flex; flex-direction: column; align-items: center; gap: 0; }
+  .full { width: 100%; }
+
+  .down {
+    display: flex; flex-direction: column; align-items: center;
+    color: var(--muted); font-size: 12.5px; padding: 9px 0 7px; gap: 1px;
   }
-  .agent b { display: block; font-weight: 600; font-size: 12px; }
-  .agent span { color: var(--muted); font-size: 10.5px; }
+  .down .g { font-size: 21px; line-height: .8; color: #b0a89a; }
 
-  .arrow { display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 11.5px; }
-  .arrow.v { flex-direction: column; gap: 3px; padding: 2px 0; }
-  .glyph { color: var(--line); font-size: 17px; line-height: 1; }
-
-  .note {
-    margin-top: 6px; font-size: 11.5px; color: var(--muted);
-    border-left: 2px solid var(--edge); padding-left: 9px;
+  /* icon rows */
+  .icons { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  .pill {
+    display: flex; align-items: center; gap: 8px;
+    border: 1.5px solid var(--line); border-radius: 10px;
+    padding: 8px 12px; background: #fdfcfa; min-width: 132px;
   }
-  .key { color: var(--text); font-weight: 600; }
-  .stop { color: var(--danger); font-weight: 600; }
-  .go { color: var(--ok); font-weight: 600; }
-  .legend { margin-top: 18px; display: flex; gap: 20px; font-size: 11.5px; color: var(--muted); }
-  .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+  .pill img { width: 20px; height: 20px; object-fit: contain; }
+  .pill b { font-size: 13.5px; font-weight: 600; display: block; }
+  .pill span { font-size: 11px; color: var(--muted); }
+
+  .two { display: flex; gap: 16px; align-items: stretch; }
+  .two > * { flex: 1; }
+
+  .tabs { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 12px; }
+  .tab {
+    border: 1.5px solid var(--line); border-radius: 8px;
+    padding: 6px 11px; font-size: 13px; background: #fdfcfa;
+  }
+
+  .steps { margin-top: 12px; display: flex; flex-direction: column; gap: 9px; }
+  .step { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; }
+  .num {
+    flex: none; width: 21px; height: 21px; border-radius: 50%;
+    background: var(--ink); color: #fff; font-size: 12px; font-weight: 700;
+    display: grid; place-items: center; margin-top: 1px;
+  }
+  .step em { font-style: normal; color: var(--muted); }
+
+  .foot {
+    margin-top: 22px; display: flex; gap: 26px; font-size: 12.5px; color: var(--muted);
+    border-top: 1px solid var(--line); padding-top: 14px;
+  }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
+  code { font-family: 'Cascadia Mono', Consolas, monospace; font-size: 12.5px; }
 </style>
 
 <div id="sheet">
-  <h1>Conduit — architecture</h1>
-  <p class="sub">
-    Two processes. The daemon owns every agent terminal; the web server only relays to it.
-    Restarting the interface does not kill your agents.
-  </p>
+  <h1>Conduit</h1>
+  <p class="sub">Run several coding agents at once. Hear only what matters. Stop anything risky.</p>
 
-  <!-- human -->
-  <div class="row">
-    <div class="box" style="flex:1">
-      <div class="title">You</div>
-      <div class="owns">Browser at :3200, or the packaged desktop app (same UI, same server, bundled)</div>
-      <div class="chips">
-        <div class="chip b">Terminals</div>
-        <div class="chip b">Group Chat</div>
-        <div class="chip b">MCP Messages</div>
-        <div class="chip b">Shared</div>
-        <div class="chip b">Wiki</div>
-        <div class="chip b">Activity</div>
-        <div class="chip b">Usage</div>
-        <div class="chip b">Approval gate</div>
-        <div class="chip b">Voice — wake word, speak, interrupt</div>
+  <div class="flow">
+
+    <!-- 1. human -->
+    <div class="card full">
+      <div class="head">
+        <h2>You</h2>
+        <span class="tag">browser &middot; or desktop app</span>
+      </div>
+      <div class="tabs">
+        <div class="tab">Terminals</div>
+        <div class="tab">Group Chat</div>
+        <div class="tab">MCP Messages</div>
+        <div class="tab">Shared</div>
+        <div class="tab">Wiki</div>
+        <div class="tab">Activity</div>
+        <div class="tab">Usage</div>
+        <div class="tab">&#127908; Voice</div>
       </div>
     </div>
+
+    <div class="down"><span class="g">&darr;</span><span>REST + WebSocket</span></div>
+
+    <!-- 2. web server -->
+    <div class="card web full">
+      <div class="head">
+        <h2>Web server</h2>
+        <span class="tag">:3200</span>
+      </div>
+      <div class="said">Serves the UI. Relays every command. <b>Owns no agents</b> &mdash; restart it and they keep running.</div>
+    </div>
+
+    <div class="down"><span class="g">&darr;</span><span>local socket</span></div>
+
+    <!-- 3. daemon -->
+    <div class="card daemon full">
+      <div class="head">
+        <h2>Daemon</h2>
+        <span class="tag">:3210</span>
+      </div>
+      <div class="said">Owns every agent process, and watches everything they print.</div>
+
+      <div class="icons">
+        <div class="pill"><img src="../client/public/icons/claude.svg" alt="" /><span><b>Claude Code</b><span>terminal</span></span></div>
+        <div class="pill"><img src="../client/public/icons/openai.svg" alt="" /><span><b>Codex</b><span>app-server</span></span></div>
+        <div class="pill"><img src="../client/public/icons/gemini.svg" alt="" /><span><b>Gemini</b><span>terminal</span></span></div>
+        <div class="pill"><img src="../client/public/icons/opencode.svg" alt="" /><span><b>OpenCode</b><span>terminal</span></span></div>
+        <div class="pill"><img src="../client/public/icons/groq.svg" alt="" /><span><b>GPT-OSS</b><span>Groq &middot; aider</span></span></div>
+        <div class="pill"><img src="../client/public/icons/nvidia.svg" alt="" /><span><b>Nemotron</b><span>OpenRouter &middot; aider</span></span></div>
+      </div>
+    </div>
+
+    <div class="down"><span class="g">&darr;</span><span>every line they print</span></div>
+
+    <!-- 4. safety + supervisor -->
+    <div class="two full">
+      <div class="card">
+        <div class="head">
+          <h2>&#128274; Read twice</h2>
+        </div>
+        <div class="steps">
+          <div class="step"><span class="num">1</span>
+            <span><b>Patterns</b> &mdash; 23 regexes, instant, no model call.<br><em>Catches <code>rm -rf</code>, <code>DROP TABLE</code>, y/N prompts.</em></span>
+          </div>
+          <div class="step"><span class="num">2</span>
+            <span><b>Supervisor</b> &mdash; decides what is worth your attention.<br><em>Progress, question, blocker, risky &mdash; or noise, which is dropped.</em></span>
+          </div>
+        </div>
+        <div class="said" style="margin-top:12px">
+          Anything risky <b>freezes the agent</b> until you answer.
+          The Supervisor can propose, never act.
+        </div>
+      </div>
+
+      <div class="card aws">
+        <div class="head">
+          <img src="../client/public/icons/strands.svg" alt="" style="width:22px;height:22px" />
+          <h2>AWS Strands Agents</h2>
+        </div>
+        <div class="said">The Supervisor is a Strands agent, with tools.</div>
+        <div class="icons">
+          <div class="pill"><img src="../client/public/icons/bedrock.svg" alt="" /><span><b>Bedrock</b><span>first choice</span></span></div>
+          <div class="pill"><img src="../client/public/icons/claude.svg" alt="" /><span><b>Anthropic</b><span>fallback</span></span></div>
+        </div>
+        <div class="said" style="margin-top:12px">
+          Same SDK either way, so losing a provider costs a provider &mdash; not the framework.
+        </div>
+      </div>
+    </div>
+
   </div>
 
-  <div class="arrow v"><span class="glyph">&#8597;</span><span>REST + WebSocket</span></div>
-
-  <div class="row">
-    <!-- web server -->
-    <div class="col" style="flex:1.05">
-      <div class="box web">
-        <div class="title">Web server <span class="port">src/server.ts &middot; :3200</span></div>
-        <div class="owns">Owns no processes. Serves the UI, exposes REST, relays every op to the daemon.</div>
-        <div class="chips">
-          <div class="chip b">React UI</div>
-          <div class="chip b">REST routes</div>
-          <div class="chip b">Browser WebSocket</div>
-          <div class="chip b">Basic auth</div>
-          <div class="chip b">/ws/voice &rarr; Nova</div>
-        </div>
-        <div class="note">
-          Restart it and the agents keep running &mdash; nothing it holds is the agent.
-        </div>
-      </div>
-
-      <div class="box aws">
-        <div class="title">Voice &mdash; Amazon Nova Sonic</div>
-        <div class="owns">Bidirectional speech, sub-second. 8 tools, including gates.</div>
-        <div class="note">
-          <span class="stop">reject</span> out loud always works.
-          <span class="go">approve</span> needs four server-checked conditions
-          (<code>src/voice/approval-guard.ts</code>).
-        </div>
-      </div>
-    </div>
-
-    <div class="arrow"><span class="glyph">&#8646;</span></div>
-
-    <!-- daemon -->
-    <div class="col" style="flex:1.25">
-      <div class="box daemon">
-        <div class="title">Daemon <span class="port">src/daemon/daemon.ts &middot; :3210 loopback</span></div>
-        <div class="owns">Owns every agent process, the status engine, the watcher and the Keeper.</div>
-        <div class="chips">
-          <div class="chip d">PTY manager</div>
-          <div class="chip d">Status engine</div>
-          <div class="chip d">The Keeper</div>
-          <div class="chip d">/org/* API</div>
-        </div>
-
-        <div class="agents">
-          <div class="agent"><b>Claude Code</b><span>PTY &middot; lifecycle hooks &middot; MCP</span></div>
-          <div class="agent"><b>Codex</b><span>app-server thread</span></div>
-          <div class="agent"><b>Gemini</b><span>PTY</span></div>
-          <div class="agent"><b>OpenCode</b><span>PTY</span></div>
-          <div class="agent"><b>GPT-OSS</b><span>PTY via aider &middot; Groq</span></div>
-          <div class="agent"><b>Nemotron</b><span>PTY via aider &middot; OpenRouter</span></div>
-        </div>
-      </div>
-
-      <div class="box">
-        <div class="title">The safety loop</div>
-        <div class="owns">Every line an agent prints is read twice.</div>
-        <div class="note">
-          <span class="key">1. By pattern</span> &mdash; 23 regexes, in-process, no model call.
-          Catches a prompt waiting for a human, or a command expensive to undo.
-        </div>
-        <div class="note">
-          <span class="key">2. By the Supervisor</span> &mdash; batched, debounced 10s,
-          at most once per agent per 20s.
-        </div>
-        <div class="note">
-          A gate <span class="key">freezes the agent</span> until you answer.
-          The Supervisor can only <span class="key">propose</span>; every decision is
-          appended to <code>audit.jsonl</code>.
-        </div>
-      </div>
-    </div>
-
-    <div class="arrow"><span class="glyph">&rarr;</span></div>
-
-    <!-- supervisor -->
-    <div class="col" style="flex:.92">
-      <div class="box aws">
-        <div class="title">Supervisor &mdash; AWS Strands Agents</div>
-        <div class="owns">
-          <code>Agent</code> + <code>tool()</code> &mdash; report_update, plan_action,
-          and four read-only tools.
-        </div>
-        <div class="chips">
-          <div class="chip a">BedrockModel</div>
-          <div class="chip a">AnthropicModel</div>
-        </div>
-        <div class="note">
-          One SDK, two providers. <code>SUPERVISOR_PROVIDER=auto</code> tries Bedrock, then
-          Anthropic &mdash; so losing a provider costs a provider, not the framework.
-        </div>
-        <div class="note">
-          <code>/api/health</code> reports <code>strands: true</code> and which one answered.
-        </div>
-      </div>
-
-      <div class="box">
-        <div class="title">On disk <span class="port">~/.conduit</span></div>
-        <div class="owns">Plain JSON and JSONL. No database.</div>
-        <div class="chips">
-          <div class="chip">project.json</div>
-          <div class="chip">groupchat.jsonl</div>
-          <div class="chip">audit.jsonl</div>
-          <div class="chip">wiki/</div>
-          <div class="chip">shared_content/</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="legend">
-    <span><span class="sw" style="background:var(--web)"></span>Web server &mdash; relays, owns nothing</span>
-    <span><span class="sw" style="background:var(--daemon)"></span>Daemon &mdash; owns every agent process</span>
-    <span><span class="sw" style="background:var(--aws)"></span>AWS &mdash; Strands Agents, Bedrock, Nova Sonic</span>
+  <div class="foot">
+    <span><span class="sw" style="background:var(--web)"></span>Relays only</span>
+    <span><span class="sw" style="background:var(--daemon)"></span>Owns the agents</span>
+    <span><span class="sw" style="background:var(--aws)"></span>AWS</span>
+    <span style="margin-left:auto">State on disk as JSON in <code>~/.conduit</code> &mdash; no database</span>
   </div>
 </div>
