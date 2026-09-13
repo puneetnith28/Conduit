@@ -631,7 +631,13 @@ testable pieces are pure functions with no React import.
 
 ## Documentation
 
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — the long form: components, data flow, sequence diagrams, verification matrix
+**[`docs/`](docs/) — nine documents**, indexed in [`docs/README.md`](docs/README.md):
+
+| | | |
+|---|---|---|
+| 1. [Architecture & Topology](ARCHITECTURE.md) | 2. [Agent Runtime](docs/agent-runtime.md) | 3. [Data Model & State Machines](docs/data-model.md) |
+| 4. [Security & Authentication](docs/security.md) | 5. [UI & Design System](docs/ui.md) | 6. [API Reference](docs/api.md) |
+| 7. [Deployment Guide](docs/deployment.md) | 8. [Development Guide](docs/development.md) | 9. [Environment Configuration](docs/environment.md) |
 - [`CLAUDE.md`](CLAUDE.md) — orientation for coding agents working on Conduit itself
 - [`.env.example`](.env.example) — every setting, with what it costs and what it needs
 
